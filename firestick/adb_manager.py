@@ -22,6 +22,18 @@ def disconnect(ip):
     subprocess.run(["adb", "disconnect", f"{ip}:5555"], capture_output=True)
 
 
+def _compress_to_jpeg(png_bytes, save_path):
+    """Convert raw PNG bytes to JPEG. Returns JPEG path or None if Pillow unavailable."""
+    try:
+        from PIL import Image
+        import io
+        jpeg_path = save_path.rsplit(".", 1)[0] + ".jpg"
+        Image.open(io.BytesIO(png_bytes)).save(jpeg_path, "JPEG", quality=75)
+        return jpeg_path
+    except Exception:
+        return None
+
+
 def screenshot(ip, save_path="/tmp/firestick_screen.png"):
     # exec-out pipes screenshot directly — one round trip vs save/pull/delete
     result = subprocess.run(
@@ -29,6 +41,9 @@ def screenshot(ip, save_path="/tmp/firestick_screen.png"):
         capture_output=True, timeout=15
     )
     if result.returncode == 0 and len(result.stdout) > 1000:
+        path = _compress_to_jpeg(result.stdout, save_path)
+        if path:
+            return path
         with open(save_path, "wb") as f:
             f.write(result.stdout)
         return save_path
@@ -42,7 +57,10 @@ def screenshot(ip, save_path="/tmp/firestick_screen.png"):
         )
         if result.returncode == 0:
             _adb(ip, "shell", "rm", "/sdcard/screen.png")
-            return save_path
+            # Try to compress the pulled PNG too
+            with open(save_path, "rb") as f:
+                png_bytes = f.read()
+            return _compress_to_jpeg(png_bytes, save_path) or save_path
 
     return None
 
@@ -81,21 +99,16 @@ def _wait_for_youtube(ip, timeout=10, settle=0.5):
     return False
 
 
-def restart_youtube(ip):
+def restart_youtube(ip, settle=0.5):
     """Force-stop and relaunch YouTube, waiting until it is foreground."""
     _adb(ip, "shell", "am", "force-stop", YOUTUBE_PKG)
     time.sleep(2)
     _adb(ip, "shell", "am", "start", "-n", YOUTUBE_ACTIVITY)
-    _wait_for_youtube(ip, timeout=8, settle=0.5)
+    _wait_for_youtube(ip, timeout=8, settle=settle)
 
 
-def open_youtube_history(ip):
-    """Open YouTube and navigate to Watch History, leaving focus on the first video."""
-    _adb(ip, "shell", "am", "force-stop", YOUTUBE_PKG)
-    time.sleep(2)
-    _adb(ip, "shell", "am", "start", "-n", YOUTUBE_ACTIVITY)
-    _wait_for_youtube(ip, timeout=10, settle=2.5)  # activity resumes before UI renders
-
+def navigate_to_history(ip):
+    """Navigate from YouTube home to Watch History, focusing the first video."""
     send_key(ip, KEY_LEFT)   # open sidebar
     time.sleep(1.0)
 
@@ -108,6 +121,12 @@ def open_youtube_history(ip):
     time.sleep(3.5)
 
     send_key(ip, KEY_DOWN)    # focus first history video (grandma presses OK to play)
+
+
+def open_youtube_history(ip):
+    """Launch YouTube fresh then navigate to Watch History."""
+    restart_youtube(ip, settle=2.5)  # extra settle so UI renders before key input
+    navigate_to_history(ip)
 
 
 def lock_to_youtube(ip):

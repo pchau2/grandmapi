@@ -84,7 +84,7 @@ def _send_photo(path, caption):
         f"{REMOTE_KEYBOARD}\r\n"
         f"--{boundary}\r\n"
         f'Content-Disposition: form-data; name="photo"; filename="screen.png"\r\n'
-        f"Content-Type: image/png\r\n\r\n"
+        f"Content-Type: {'image/jpeg' if path.lower().endswith('.jpg') else 'image/png'}\r\n\r\n"
     ).encode() + photo_data + f"\r\n--{boundary}--\r\n".encode()
     req = urllib.request.Request(url, data=body)
     req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")

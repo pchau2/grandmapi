@@ -186,7 +186,7 @@ def edit_photo_message(message_id, photo_path, caption):
         f"{REMOTE_KEYBOARD}\r\n"
         f"--{boundary}\r\n"
         f'Content-Disposition: form-data; name="photo"; filename="screen.png"\r\n'
-        f"Content-Type: image/png\r\n\r\n"
+        f"Content-Type: {'image/jpeg' if photo_path.lower().endswith('.jpg') else 'image/png'}\r\n\r\n"
     ).encode() + photo_data + f"\r\n--{boundary}--\r\n".encode()
     req = urllib.request.Request(url, data=body)
     req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
@@ -282,10 +282,11 @@ def send_photo(path, caption="", reply_markup=None):
             f'Content-Disposition: form-data; name="reply_markup"\r\n\r\n'
             f"{reply_markup}\r\n"
         )
+    img_type = "image/jpeg" if path.lower().endswith(".jpg") else "image/png"
     parts += (
         f"--{boundary}\r\n"
         f'Content-Disposition: form-data; name="photo"; filename="screen.png"\r\n'
-        f"Content-Type: image/png\r\n\r\n"
+        f"Content-Type: {img_type}\r\n\r\n"
     )
     body = parts.encode() + photo_data + f"\r\n--{boundary}--\r\n".encode()
     req = urllib.request.Request(url, data=body)
@@ -349,6 +350,54 @@ def _health_report():
         memory = "unavailable"
 
     return svc_block, ts_ip, disk, memory
+
+
+def _cpu_temp():
+    try:
+        with open("/sys/class/thermal/thermal_zone0/temp") as f:
+            c = int(f.read().strip()) / 1000
+        icon = "🔥" if c > 70 else "🌡"
+        return f"{icon} {c:.1f}°C"
+    except Exception:
+        return "unavailable"
+
+
+def _cpu_load():
+    try:
+        with open("/proc/loadavg") as f:
+            p = f.read().split()
+        return f"{p[0]} / {p[1]} / {p[2]} (1m / 5m / 15m)"
+    except Exception:
+        return "unavailable"
+
+
+def _uptime():
+    try:
+        r = subprocess.run(["uptime", "-p"], capture_output=True, text=True, timeout=5)
+        return r.stdout.strip()
+    except Exception:
+        return "unavailable"
+
+
+def _wifi_signal():
+    try:
+        r = subprocess.run(["iwconfig", "wlan0"], capture_output=True, text=True, timeout=5)
+        for line in r.stdout.split("\n"):
+            if "Signal level" in line:
+                part = line.strip().split("Signal level=")[-1].split()[0]
+                return f"📶 {part} dBm"
+        return "📶 unavailable"
+    except Exception:
+        return "📶 unavailable"
+
+
+def _throttle_status():
+    try:
+        r = subprocess.run(["vcgencmd", "get_throttled"], capture_output=True, text=True, timeout=5)
+        val = r.stdout.strip()
+        return "✅ None" if "0x0" in val else f"⚠️ {val}"
+    except Exception:
+        return "unavailable"
 
 
 def _is_wifi_connected():
@@ -507,6 +556,7 @@ HELP_TEXT = (
     "/restarttv — Reconnect ADB to Fire Stick\n"
     "/reboot — Reboot the Fire Stick\n\n"
     "*🖥 Pi*\n"
+    "/health — CPU, RAM, disk, temp, uptime\n"
     "/restart — Restart grandmapi services\n"
     "/update — Pull latest code and restart\n"
     "/logs — Show recent service logs\n\n"
@@ -613,11 +663,20 @@ def handle_command(text):
             return
         alert_id = _read_alert_msg_id()
         if alert_id:
-            _update_alert_caption(alert_id, _alert_caption("⏳ Opening YouTube history..."))
+            _update_alert_caption(alert_id, _alert_caption("⏳ Opening YouTube..."))
         else:
             mid = send("📺 Opening YouTube history...")
             _session_message_ids.append(mid)
-        adb_manager.open_youtube_history(connected_ip)
+
+        # Step 1: launch YouTube, show home screen as progress update
+        adb_manager.restart_youtube(connected_ip, settle=2.5)
+        if alert_id:
+            path = adb_manager.screenshot(connected_ip)
+            if path:
+                edit_photo_message(alert_id, path, _alert_caption("⏳ Navigating to history..."))
+
+        # Step 2: navigate to history, show final state
+        adb_manager.navigate_to_history(connected_ip)
         path = adb_manager.screenshot(connected_ip)
         if alert_id:
             if path:
@@ -657,6 +716,20 @@ def handle_command(text):
         send("🔄 *Rebooting Fire Stick...*\nIt will reconnect automatically in about 30 seconds.")
         adb_manager._adb(connected_ip, "shell", "reboot")
         connected_ip = None
+
+    elif cmd == "/health":
+        _, ts_ip, disk, memory = _health_report()
+        send(
+            f"🖥 *Pi health*\n\n"
+            f"{_cpu_temp()}\n"
+            f"💻 Load: `{_cpu_load()}`\n"
+            f"🧠 RAM: {memory}\n"
+            f"💾 Disk: {disk}\n"
+            f"⏱ Uptime: {_uptime()}\n"
+            f"{_wifi_signal()}\n"
+            f"⚡ Throttle: {_throttle_status()}\n"
+            f"🌐 Tailscale: `{ts_ip}`"
+        )
 
     elif cmd == "/support":
         notify.send(connected_ip)
