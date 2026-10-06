@@ -49,7 +49,8 @@ def _connect_and_watch(ip):
     global connected_ip
     if adb_manager.connect(ip):
         connected_ip = ip
-        print(f"[button_monitor] Connected to {ip}, watching for mic button...")
+        adb_manager.disable_voice(ip)
+        print(f"[button_monitor] Connected to {ip}, voice disabled, watching for mic button...")
         _watch_events(ip)
         print(f"[button_monitor] Lost connection to {ip}")
         connected_ip = None

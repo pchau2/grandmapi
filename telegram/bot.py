@@ -135,6 +135,7 @@ def _firestick_monitor_loop():
                 if adb_manager.connect(ip):
                     connected_ip = ip
                     name = adb_manager.get_device_name(ip)
+                    adb_manager.disable_voice(ip)
                     send(f"Fire Stick reconnected: {name} ({ip})")
                     print(f"[monitor] Fire Stick {ip} reconnected.")
                     last_state = "connected"
@@ -167,6 +168,7 @@ def ensure_connected():
         if adb_manager.connect(ip):
             connected_ip = ip
             name = adb_manager.get_device_name(ip)
+            adb_manager.disable_voice(ip)
             send(f"Connected to {name} ({ip})")
             return True
 
