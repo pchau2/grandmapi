@@ -106,13 +106,26 @@ def _api_post(method, **params):
         return {"ok": False}
 
 
+def _track(message_id):
+    """Remember a transient message so Done can clean it up later."""
+    if message_id:
+        _session_message_ids.append(message_id)
+        # Cap the list so it can't grow unbounded between Done presses
+        if len(_session_message_ids) > 50:
+            del _session_message_ids[:-50]
+    return message_id
+
+
 def send(text):
     result = _api_post("sendMessage", chat_id=CHAT_ID, text=text, parse_mode="Markdown")
-    return result.get("result", {}).get("message_id")
+    return _track(result.get("result", {}).get("message_id"))
 
 
 def pin_message(message_id):
     if message_id:
+        # A pinned message (status board, heartbeat) is permanent — never clean it up
+        if message_id in _session_message_ids:
+            _session_message_ids.remove(message_id)
         _api_post("pinChatMessage", chat_id=CHAT_ID, message_id=message_id,
                   disable_notification=True)
 
@@ -294,7 +307,7 @@ def send_photo(path, caption="", reply_markup=None):
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             result = json.loads(resp.read())
-            return result.get("result", {}).get("message_id")
+            return _track(result.get("result", {}).get("message_id"))
     except Exception:
         return None
 
@@ -644,8 +657,7 @@ def handle_command(text):
         if alert_id:
             _update_alert_caption(alert_id, _alert_caption("⏳ Restarting YouTube..."))
         else:
-            mid = send("🔄 Restarting YouTube...")
-            _session_message_ids.append(mid)
+            send("🔄 Restarting YouTube...")
         adb_manager.restart_youtube(connected_ip)
         path = adb_manager.screenshot(connected_ip)
         if alert_id:
@@ -654,9 +666,7 @@ def handle_command(text):
             else:
                 _update_alert_caption(alert_id, _alert_caption("▶️ YouTube restarted"))
         elif path:
-            mid = send_photo(path, _alert_caption("▶️ YouTube restarted"), reply_markup=REMOTE_KEYBOARD)
-            if mid:
-                _session_message_ids.append(mid)
+            send_photo(path, _alert_caption("▶️ YouTube restarted"), reply_markup=REMOTE_KEYBOARD)
 
     elif cmd == "/history":
         if not ensure_connected():
@@ -665,8 +675,7 @@ def handle_command(text):
         if alert_id:
             _update_alert_caption(alert_id, _alert_caption("⏳ Opening YouTube..."))
         else:
-            mid = send("📺 Opening YouTube history...")
-            _session_message_ids.append(mid)
+            send("📺 Opening YouTube history...")
 
         # Step 1: launch YouTube, show home screen as progress update
         adb_manager.restart_youtube(connected_ip, settle=2.5)
@@ -684,9 +693,7 @@ def handle_command(text):
             else:
                 _update_alert_caption(alert_id, _alert_caption("📺 History ready — press OK to play"))
         elif path:
-            mid = send_photo(path, "📺 History ready — press OK to play", reply_markup=REMOTE_KEYBOARD)
-            if mid:
-                _session_message_ids.append(mid)
+            send_photo(path, "📺 History ready — press OK to play", reply_markup=REMOTE_KEYBOARD)
 
     elif cmd == "/ytlock":
         if not ensure_connected():
