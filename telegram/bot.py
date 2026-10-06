@@ -11,6 +11,7 @@ import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from firestick import adb_manager, discovery
+from telegram import notify
 
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
@@ -458,6 +459,7 @@ HELP_TEXT = (
     "*ℹ️ Info*\n"
     "/status — Connection status\n"
     "/heartbeat — Send daily check-in now\n"
+    "/support — Simulate grandma needs help\n"
     "/help — Show this message"
 )
 
@@ -553,6 +555,9 @@ def handle_command(text):
         send("🔄 *Rebooting Fire Stick...*\nIt will reconnect automatically in about 30 seconds.")
         adb_manager._adb(connected_ip, "shell", "reboot")
         connected_ip = None
+
+    elif cmd == "/support":
+        notify.send(connected_ip)
 
     else:
         send(f"❓ Unknown command: `{cmd}`\n\nType /help to see all available commands.")
