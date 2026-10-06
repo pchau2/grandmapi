@@ -467,6 +467,20 @@ def _tailscale_ip():
     return None
 
 
+def _lan_ip():
+    """The Pi's local WiFi IP (192.168.x / 10.x), excluding Tailscale and Docker."""
+    try:
+        r = subprocess.run(["hostname", "-I"], capture_output=True, text=True, timeout=5)
+        for tok in r.stdout.split():
+            if tok.startswith("192.168.") or tok.startswith("10."):
+                return tok
+            if tok.startswith("172.") and not tok.startswith("172.17."):
+                return tok
+    except Exception:
+        pass
+    return None
+
+
 _health_state = {"temp": False, "disk": False, "throttle": False}
 
 
@@ -705,7 +719,8 @@ def handle_command(text):
             f"*grandmapi status* 📡\n\n"
             f"{wifi_icon} WiFi: {'Connected' if wifi else 'Disconnected'}\n"
             f"{fs_icon} Fire Stick: {fs_status}"
-            f"{lock_line}"
+            f"{lock_line}\n"
+            f"🏠 LAN IP: `{_lan_ip() or 'unknown'}`"
         )
         pin_message(msg_id)
 
@@ -845,6 +860,7 @@ def handle_command(text):
             f"⏱ Uptime: {_uptime()}\n"
             f"{_wifi_signal()}\n"
             f"⚡ Throttle: {_throttle_status()}\n"
+            f"🏠 LAN IP: `{_lan_ip() or 'unknown'}`\n"
             f"🌐 Tailscale: `{ts_ip}`"
         )
 
