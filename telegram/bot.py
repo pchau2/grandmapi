@@ -125,7 +125,7 @@ def edit_message(message_id, text):
 
 def _read_alert_msg_id():
     try:
-        with open("/tmp/grandmapi_alert_msg_id") as f:
+        with open(notify.ALERT_MSG_ID_PATH) as f:
             return int(f.read().strip())
     except Exception:
         return None
@@ -133,7 +133,7 @@ def _read_alert_msg_id():
 
 def _clear_alert_msg_id():
     try:
-        os.remove("/tmp/grandmapi_alert_msg_id")
+        os.remove(notify.ALERT_MSG_ID_PATH)
     except Exception:
         pass
 
@@ -576,9 +576,14 @@ def handle_command(text):
         if path:
             alert_id = _read_alert_msg_id()
             if alert_id:
-                edit_photo_message(alert_id, path, "▶️ YouTube restarted")
+                caption = notify.ALERT_TEXT.replace(
+                    "🆘 *GRANDMA NEEDS HELP!*",
+                    "🆘 *GRANDMA NEEDS HELP!*\n▶️ YouTube restarted"
+                )
+                edit_photo_message(alert_id, path, caption)
             else:
-                mid = send_photo(path, "▶️ YouTube restarted", reply_markup=REMOTE_KEYBOARD)
+                mid = send_photo(path, "▶️ YouTube restarted\n\n" + notify.ALERT_TEXT.split("\n\n", 1)[1],
+                                 reply_markup=REMOTE_KEYBOARD)
                 if mid:
                     _session_message_ids.append(mid)
 

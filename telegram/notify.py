@@ -4,6 +4,7 @@ import urllib.parse
 import json
 import os
 import sys
+import time
 
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
@@ -44,6 +45,9 @@ REMOTE_KEYBOARD = json.dumps({
         [{"text": "✅ Done — grandma is all set", "callback_data": "done"}]
     ]
 })
+
+ALERT_SCREEN_PATH = "/tmp/grandmapi_alert_screen.png"
+ALERT_MSG_ID_PATH = "/tmp/grandmapi_alert_msg_id"
 
 
 def _send_message(text):
@@ -94,14 +98,23 @@ def send(ip=None):
         print("Error: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID not set")
         return False
 
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from firestick import adb_manager
+
     screenshot_path = None
     if ip:
-        try:
-            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            from firestick import adb_manager
-            screenshot_path = adb_manager.screenshot(ip)
-        except Exception as e:
-            print(f"Screenshot failed: {e}")
+        # Small delay so the mic overlay finishes dismissing before we screencap
+        time.sleep(0.8)
+        for attempt in range(2):
+            try:
+                screenshot_path = adb_manager.screenshot(ip, save_path=ALERT_SCREEN_PATH)
+                if screenshot_path:
+                    print(f"[notify] Screenshot captured on attempt {attempt + 1}")
+                    break
+                print(f"[notify] Screenshot returned None on attempt {attempt + 1}")
+            except Exception as e:
+                print(f"[notify] Screenshot attempt {attempt + 1} failed: {e}")
+            time.sleep(1)
 
     try:
         if screenshot_path:
@@ -110,13 +123,13 @@ def send(ip=None):
             msg_id = _send_message(ALERT_TEXT)
         if msg_id:
             try:
-                with open("/tmp/grandmapi_alert_msg_id", "w") as f:
+                with open(ALERT_MSG_ID_PATH, "w") as f:
                     f.write(str(msg_id))
             except Exception:
                 pass
         return True
     except Exception as e:
-        print(f"Failed to send alert: {e}")
+        print(f"[notify] Failed to send alert: {e}")
         try:
             _send_message(ALERT_TEXT)
         except Exception:
