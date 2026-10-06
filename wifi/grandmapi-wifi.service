@@ -1,0 +1,16 @@
+[Unit]
+Description=grandmapi WiFi Setup GUI
+After=graphical.target
+Wants=graphical.target
+
+[Service]
+User=admin
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/admin/.Xauthority
+WorkingDirectory=/home/admin/grandmapi/wifi
+ExecStart=/usr/bin/python3 /home/admin/grandmapi/wifi/main.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target
