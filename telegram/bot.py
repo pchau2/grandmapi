@@ -21,6 +21,7 @@ _wifi_was_connected = True
 _ytlock_active = True
 _callback_lock = threading.Lock()
 _startup_msg_id = None
+_session_message_ids = []  # messages to bulk-delete when Done is pressed
 
 HEARTBEAT_HOUR = 9           # send daily check-in at 9 AM
 WIFI_CHECK_INTERVAL = 60     # 1 minute
@@ -178,11 +179,16 @@ def handle_callback(callback_query):
         answer_callback(query_id, "⚠️ Fire Stick not connected")
         return
 
-    # Done button — delete the alert message immediately, no lock needed
+    # Done button — delete this message and all tracked session messages
     if data == "done":
         answer_callback(query_id, "👍 Marked as resolved")
+        to_delete = list(_session_message_ids)
+        _session_message_ids.clear()
         if message_id:
-            _api_post("deleteMessage", chat_id=CHAT_ID, message_id=message_id)
+            to_delete.append(message_id)
+        for mid in to_delete:
+            if mid:
+                _api_post("deleteMessage", chat_id=CHAT_ID, message_id=mid)
         return
 
     # Reject if already processing a button press
@@ -547,21 +553,27 @@ def handle_command(text):
     elif cmd == "/resetyt":
         if not ensure_connected():
             return
-        send("🔄 Restarting YouTube...")
+        mid = send("🔄 Restarting YouTube...")
+        _session_message_ids.append(mid)
         adb_manager.restart_youtube(connected_ip)
         time.sleep(3)
         path = adb_manager.screenshot(connected_ip)
         if path:
-            send_photo(path, "▶️ YouTube restarted", reply_markup=REMOTE_KEYBOARD)
+            mid = send_photo(path, "▶️ YouTube restarted", reply_markup=REMOTE_KEYBOARD)
+            if mid:
+                _session_message_ids.append(mid)
 
     elif cmd == "/history":
         if not ensure_connected():
             return
-        send("📺 Opening YouTube history...")
+        mid = send("📺 Opening YouTube history...")
+        _session_message_ids.append(mid)
         adb_manager.open_youtube_history(connected_ip)
         path = adb_manager.screenshot(connected_ip)
         if path:
-            send_photo(path, "📺 YouTube history — press OK on remote to play", reply_markup=REMOTE_KEYBOARD)
+            mid = send_photo(path, "📺 YouTube history — press OK on remote to play", reply_markup=REMOTE_KEYBOARD)
+            if mid:
+                _session_message_ids.append(mid)
 
     elif cmd == "/ytlock":
         if not ensure_connected():
