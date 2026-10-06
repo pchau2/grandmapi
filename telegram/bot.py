@@ -96,10 +96,12 @@ def _heartbeat_loop():
         fs = "Connected" if connected_ip else "Not connected"
         wifi_icon = "✅" if wifi else "❌"
         fs_icon = "✅" if connected_ip else "❌"
+        lock_line = "\n🔒 YouTube lock: *Active*" if _ytlock_active else ""
         send(
-            f"💓 *grandmapi heartbeat*\n\n"
+            f"💓 *grandmapi daily check-in*\n\n"
             f"{wifi_icon} WiFi: {'Connected' if wifi else 'Disconnected'}\n"
             f"{fs_icon} Fire Stick: {fs}"
+            f"{lock_line}"
         )
 
 
@@ -114,7 +116,7 @@ def _wifi_monitor_loop():
             print("[monitor] WiFi connection lost.")
         elif connected and not _wifi_was_connected:
             _wifi_was_connected = True
-            send("✅ WiFi reconnected.")
+            send("✅ *WiFi reconnected*\ngrandmapi is back online.")
             print("[monitor] WiFi restored.")
 
 
@@ -127,7 +129,11 @@ def _firestick_monitor_loop():
         if connected_ip:
             ok, _, _ = adb_manager._adb(connected_ip, "shell", "echo", "ok", timeout=5)
             if not ok:
-                send(f"⚠️ Fire Stick disconnected ({connected_ip}).")
+                send(
+                    f"⚠️ *Fire Stick disconnected*\n\n"
+                    f"`{connected_ip}` is no longer reachable.\n"
+                    f"Will scan and reconnect automatically."
+                )
                 print(f"[monitor] Fire Stick {connected_ip} disconnected.")
                 connected_ip = None
                 last_state = "disconnected"
@@ -140,7 +146,7 @@ def _firestick_monitor_loop():
                     connected_ip = ip
                     name = adb_manager.get_device_name(ip)
                     adb_manager.disable_voice(ip)
-                    send(f"✅ Fire Stick reconnected: {name} ({ip})")
+                    send(f"✅ *Fire Stick reconnected*\n\n*{name}* (`{ip}`)")
                     print(f"[monitor] Fire Stick {ip} reconnected.")
                     last_state = "connected"
                     break
@@ -197,17 +203,18 @@ def ensure_connected():
 HELP_TEXT = (
     "*grandmapi* 🏠\n\n"
     "*📺 Fire Stick*\n"
-    "`/youtube` — Open YouTube\n"
-    "`/ytlock` — Lock to YouTube only\n"
-    "`/ytunlock` — Restore normal access\n"
-    "`/screenshot` — Capture the screen\n"
-    "`/reboot` — Reboot the Fire Stick\n\n"
+    "/youtube — Open YouTube\n"
+    "/history — Resume most recent YouTube video\n"
+    "/ytlock — Lock to YouTube only\n"
+    "/ytunlock — Restore normal access\n"
+    "/screenshot — Capture the screen\n"
+    "/reboot — Reboot the Fire Stick\n\n"
     "*🎤 Mic Button*\n"
-    "`/disablemic` — Help alert only _(no voice)_\n"
-    "`/enablemic` — Re-enable voice search\n\n"
+    "/disablemic — Help alert only _(no voice)_\n"
+    "/enablemic — Re-enable voice search\n\n"
     "*ℹ️ Info*\n"
-    "`/status` — Connection status\n"
-    "`/help` — Show this message"
+    "/status — Connection status\n"
+    "/help — Show this message"
 )
 
 
@@ -256,6 +263,12 @@ def handle_command(text):
         adb_manager.open_youtube(connected_ip)
         send("▶️ YouTube opened.")
 
+    elif cmd == "/history":
+        if not ensure_connected():
+            return
+        send("📺 Opening YouTube history...")
+        adb_manager.open_youtube_history(connected_ip)
+
     elif cmd == "/ytlock":
         if not ensure_connected():
             return
@@ -274,23 +287,23 @@ def handle_command(text):
         if not ensure_connected():
             return
         adb_manager.disable_voice(connected_ip)
-        send("🔇 Mic button disabled. It will only trigger the help alert.")
+        send("🔇 *Mic button disabled*\nPressing it will only send you a help alert — no voice search.")
 
     elif cmd == "/enablemic":
         if not ensure_connected():
             return
         adb_manager.enable_voice(connected_ip)
-        send("🎤 Mic button re-enabled. Voice search restored.")
+        send("🎤 *Mic button re-enabled*\nVoice search is active again.")
 
     elif cmd == "/reboot":
         if not ensure_connected():
             return
-        send("🔄 Rebooting Fire Stick...")
+        send("🔄 *Rebooting Fire Stick...*\nIt will reconnect automatically in about 30 seconds.")
         adb_manager._adb(connected_ip, "shell", "reboot")
         connected_ip = None
 
     else:
-        send(f"❓ Unknown command: `{cmd}`\nType /help for available commands.")
+        send(f"❓ Unknown command: `{cmd}`\n\nType /help to see all available commands.")
 
 
 # ------------------------------------------------------------------ main loop
@@ -301,10 +314,11 @@ def run():
         sys.exit(1)
 
     print("grandmapi bot started.")
+    wifi = _is_wifi_connected()
     send(
-        "✅ *grandmapi is online*\n"
-        f"WiFi: {'Connected' if _is_wifi_connected() else 'Disconnected'}\n"
-        "Type /help for available commands."
+        f"✅ *grandmapi is online* 🏠\n\n"
+        f"{'✅' if wifi else '❌'} WiFi: {'Connected' if wifi else 'Disconnected'}\n\n"
+        f"Type /help for available commands."
     )
 
     start_monitors()

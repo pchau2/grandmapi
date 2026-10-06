@@ -12,12 +12,13 @@ ALERT_TEXT = (
     "🆘 *GRANDMA NEEDS HELP!*\n\n"
     "She pressed the mic button on the remote.\n\n"
     "*Quick actions:*\n"
-    "`/screenshot` — See what's on screen\n"
-    "`/youtube` — Open YouTube\n"
-    "`/ytlock` — Lock to YouTube\n"
-    "`/ytunlock` — Restore normal access\n"
-    "`/status` — Check connection\n"
-    "`/help` — All commands"
+    "/screenshot — See what's on screen\n"
+    "/history — Resume most recent video\n"
+    "/youtube — Open YouTube\n"
+    "/ytlock — Lock to YouTube\n"
+    "/ytunlock — Restore normal access\n"
+    "/status — Check connection\n"
+    "/help — All commands"
 )
 
 
