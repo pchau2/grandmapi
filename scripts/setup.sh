@@ -24,6 +24,11 @@ sudo systemctl enable grandmapi-wifi.service
 sudo systemctl enable grandmapi-telegram.service
 sudo systemctl enable grandmapi-monitor.service
 
+# Create saved networks file if it doesn't exist
+if [ ! -f /etc/grandmapi_networks.json ]; then
+    echo '{}' | sudo tee /etc/grandmapi_networks.json > /dev/null
+fi
+
 # Create env file for Telegram credentials if it doesn't exist
 if [ ! -f /etc/grandmapi.env ]; then
     sudo cp /home/admin/grandmapi/telegram/grandmapi.env.template /etc/grandmapi.env

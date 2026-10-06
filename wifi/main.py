@@ -79,6 +79,13 @@ class App:
         def check():
             if wifi_manager.is_connected():
                 self.scene = "menu"
+            elif wifi_manager.load_saved_networks():
+                self.status_msg = "Connecting to saved network..."
+                if wifi_manager.auto_connect():
+                    self.scene = "menu"
+                else:
+                    self.status_msg = "Saved networks not available. Scanning..."
+                    self._start_wifi_scan()
             else:
                 self._start_wifi_scan()
 
