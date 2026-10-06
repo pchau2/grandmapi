@@ -2,11 +2,16 @@
 """
 Live web remote for the Fire Stick, viewable in a browser over Tailscale.
 
-Serves an MJPEG stream of the screen (roughly 1-2 fps on a Pi Zero 2 W)
-alongside a control pad. Pressing a button sends the keyevent over ADB and
-you watch the result update live in the same page — no screenshot lag.
+Primary path: real H.264 video. The Fire Stick hardware-encodes its screen
+via `screenrecord`, the Pi pipes it through ffmpeg into fragmented MP4 (a
+container remux, no transcoding — the Pi stays light), and the browser plays
+it with Media Source Extensions. This is smooth and low-latency.
 
-The stream is idle (no ADB load) whenever no browser has the page open.
+Fallback path: if H.264/ffmpeg/MSE is unavailable, the page automatically
+switches to a ~1 fps MJPEG screenshot stream so it always shows something.
+
+A control pad sends keyevents over ADB; you watch the result live.
+Capture/encoding only runs while a browser has the page open.
 
 Usage:
     python3 stream_server.py [port]
@@ -14,7 +19,9 @@ Usage:
 import os
 import sys
 import time
+import shutil
 import threading
+import subprocess
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -23,15 +30,18 @@ from firestick import adb_manager, discovery
 
 PORT = 8080
 
-# Frame size/quality — smaller + lower quality = faster. Tunable via env.
+# H.264 video settings (tunable via env)
+H264_SIZE = os.environ.get("STREAM_H264_SIZE", "1280x720")
+H264_BITRATE = os.environ.get("STREAM_H264_BITRATE", "4000000")
+
+# MJPEG fallback frame settings (tunable via env)
 STREAM_WIDTH = int(os.environ.get("STREAM_WIDTH", "480"))
 STREAM_QUALITY = int(os.environ.get("STREAM_QUALITY", "45"))
 
 _firestick_ip = None
 _ip_lock = threading.Lock()
 
-# Shared latest-frame buffer: one capture loop feeds all viewers, so capturing
-# runs continuously at full speed and never blocks on a slow client.
+# ---- MJPEG fallback: shared latest-frame buffer -------------------------------
 _latest = {"frame": None, "ctype": None, "seq": 0}
 _frame_lock = threading.Lock()
 _viewers = 0
@@ -61,12 +71,12 @@ PAGE = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fire Stick — live remote</title>
 <style>
-  :root { --b:#2a2a2e; --bh:#3a3a40; --accent:#4a90d9; }
+  :root { --b:#2a2a2e; --accent:#4a90d9; }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   body { margin:0; background:#111; color:#eee; font-family:system-ui,sans-serif;
          display:flex; flex-direction:column; align-items:center; gap:14px;
          padding:12px; }
-  #screen { width:100%; max-width:640px; background:#000; border-radius:8px;
+  #screen { width:100%; max-width:720px; background:#000; border-radius:8px;
             aspect-ratio:16/9; object-fit:contain; }
   .pad { width:100%; max-width:360px; display:flex; flex-direction:column; gap:8px; }
   .row { display:flex; gap:8px; justify-content:center; }
@@ -80,10 +90,12 @@ PAGE = """<!doctype html>
            background:#000a; padding:8px 16px; border-radius:20px; font-size:14px;
            opacity:0; transition:opacity .2s; pointer-events:none; }
   #toast.show { opacity:1; }
+  #mode { font-size:12px; color:#888; }
 </style>
 </head>
 <body>
-  <img id="screen" src="/mjpeg" alt="Fire Stick screen">
+  <video id="screen" autoplay muted playsinline></video>
+  <div id="mode">connecting…</div>
 
   <div class="pad">
     <div class="row"><button onclick="k('up')">▲</button></div>
@@ -94,7 +106,7 @@ PAGE = """<!doctype html>
     </div>
     <div class="row"><button onclick="k('down')">▼</button></div>
     <div class="row">
-      <button class="wide" onclick="k('home')">🏠 Home</button>
+      <button class="wide" onclick="k('home')">\U0001f3e0 Home</button>
       <button class="wide" onclick="k('back')">↩ Back</button>
     </div>
     <div class="row">
@@ -103,21 +115,22 @@ PAGE = """<!doctype html>
       <button onclick="k('fwd')">⏭</button>
     </div>
     <div class="row">
-      <button onclick="k('vol_up')">🔊+</button>
-      <button onclick="k('vol_down')">🔊–</button>
+      <button onclick="k('vol_up')">\U0001f50a+</button>
+      <button onclick="k('vol_down')">\U0001f50a–</button>
     </div>
     <div class="row">
       <button class="wide" onclick="k('youtube')">▶️ YouTube</button>
-      <button class="wide" onclick="k('resetyt')">🔄 Reset YT</button>
+      <button class="wide" onclick="k('resetyt')">\U0001f504 Reset YT</button>
     </div>
     <div class="row">
-      <button class="wide" onclick="k('history')">📺 History</button>
+      <button class="wide" onclick="k('history')">\U0001f4fa History</button>
     </div>
   </div>
 
   <div id="toast"></div>
 <script>
   const toast = document.getElementById('toast');
+  const mode = document.getElementById('mode');
   let t;
   function flash(msg) {
     toast.textContent = msg; toast.classList.add('show');
@@ -125,8 +138,94 @@ PAGE = """<!doctype html>
   }
   function k(action) {
     flash(action);
-    fetch('/control?action=' + action).catch(() => flash('⚠️ failed'));
+    fetch('/control?action=' + action).catch(() => flash('failed'));
   }
+
+  // Candidate H.264 codec strings to try (profile must match the encoder).
+  const CODECS = ['avc1.640029','avc1.64001f','avc1.4d401f','avc1.42e01f'];
+  let fellBack = false;
+
+  function fallbackMJPEG(why) {
+    if (fellBack) return;
+    fellBack = true;
+    mode.textContent = 'MJPEG fallback (~1 fps)' + (why ? ' — ' + why : '');
+    const old = document.getElementById('screen');
+    const img = document.createElement('img');
+    img.id = 'screen';
+    img.src = '/mjpeg';
+    old.replaceWith(img);
+  }
+
+  function pickCodec() {
+    if (!('MediaSource' in window)) return null;
+    for (const c of CODECS) {
+      const type = 'video/mp4; codecs="' + c + '"';
+      if (MediaSource.isTypeSupported(type)) return type;
+    }
+    return null;
+  }
+
+  function startVideo() {
+    const type = pickCodec();
+    if (!type) return fallbackMJPEG('no MSE');
+
+    const ms = new MediaSource();
+    const v = document.getElementById('screen');
+    v.src = URL.createObjectURL(ms);
+
+    ms.addEventListener('sourceopen', async () => {
+      let sb;
+      try { sb = ms.addSourceBuffer(type); sb.mode = 'sequence'; }
+      catch (e) { return fallbackMJPEG('codec'); }
+
+      const queue = [];
+      function pump() {
+        if (sb.updating || !queue.length) return;
+        try { sb.appendBuffer(queue.shift()); }
+        catch (e) {
+          if (e.name === 'QuotaExceededError') {
+            try {
+              const b = sb.buffered;
+              if (b.length) sb.remove(b.start(0), Math.max(b.start(0), v.currentTime - 1));
+            } catch (_) {}
+          } else { return fallbackMJPEG('append'); }
+        }
+      }
+      sb.addEventListener('updateend', pump);
+
+      // Keep latency low: stay near the live edge.
+      v.addEventListener('timeupdate', () => {
+        const b = v.buffered;
+        if (b.length && b.end(b.length - 1) - v.currentTime > 2.5) {
+          v.currentTime = b.end(b.length - 1) - 0.3;
+        }
+      });
+
+      let res;
+      try { res = await fetch('/video'); }
+      catch (e) { return fallbackMJPEG('fetch'); }
+      if (!res.ok) return fallbackMJPEG('no ffmpeg');
+      mode.textContent = 'H.264 live';
+
+      const reader = res.body.getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          queue.push(value);
+          pump();
+        }
+      } catch (e) { /* stream dropped */ }
+
+      // screenrecord has a 3-min cap; the pipeline ends and we reconnect.
+      try { if (ms.readyState === 'open') ms.endOfStream(); } catch (_) {}
+      if (!fellBack) setTimeout(startVideo, 400);
+    });
+
+    ms.addEventListener('error', () => fallbackMJPEG('mediasource'));
+  }
+
+  startVideo();
 </script>
 </body>
 </html>
@@ -153,6 +252,34 @@ def _ensure_ip():
         return None
 
 
+def _have_ffmpeg():
+    return shutil.which("ffmpeg") is not None
+
+
+def _start_h264(ip):
+    """Start screenrecord (device H.264) piped through ffmpeg into fragmented MP4."""
+    adb_cmd = [
+        "adb", "-s", f"{ip}:5555", "exec-out",
+        "screenrecord", "--output-format=h264",
+        f"--size={H264_SIZE}", f"--bit-rate={H264_BITRATE}",
+        "--time-limit=180", "-",
+    ]
+    ff_cmd = [
+        "ffmpeg", "-hide_banner", "-loglevel", "error",
+        "-fflags", "nobuffer", "-flags", "low_delay",
+        "-f", "h264", "-i", "pipe:0",
+        "-an", "-c:v", "copy",
+        "-movflags", "+frag_keyframe+empty_moov+default_base_moof",
+        "-f", "mp4", "pipe:1",
+    ]
+    p_adb = subprocess.Popen(adb_cmd, stdout=subprocess.PIPE)
+    p_ff = subprocess.Popen(ff_cmd, stdin=p_adb.stdout, stdout=subprocess.PIPE)
+    p_adb.stdout.close()  # let ffmpeg own the pipe so adb sees SIGPIPE on exit
+    return p_adb, p_ff
+
+
+# ---- MJPEG fallback ----------------------------------------------------------
+
 def _capture_loop():
     """Continuously grab frames into the shared buffer while anyone is watching."""
     global _capture_thread
@@ -160,7 +287,7 @@ def _capture_loop():
     while True:
         with _viewers_lock:
             if _viewers <= 0:
-                _capture_thread = None  # last viewer left; stop capturing
+                _capture_thread = None
                 return
         ip = _firestick_ip or _ensure_ip()
         frame = ctype = None
@@ -189,8 +316,9 @@ def _start_capture():
             _capture_thread.start()
 
 
+# ---- control pad -------------------------------------------------------------
+
 def _do_action(action):
-    """Run a control-pad action. Returns True on success."""
     ip = _firestick_ip or _ensure_ip()
     if not ip:
         return False
@@ -214,12 +342,14 @@ def _do_action(action):
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *args):
-        pass  # keep journald quiet
+        pass
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
-        if parsed.path == "/mjpeg":
-            self._stream()
+        if parsed.path == "/video":
+            self._video()
+        elif parsed.path == "/mjpeg":
+            self._mjpeg()
         elif parsed.path == "/control":
             qs = urllib.parse.parse_qs(parsed.query)
             action = (qs.get("action") or [""])[0]
@@ -244,7 +374,42 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _stream(self):
+    def _video(self):
+        ip = _firestick_ip or _ensure_ip()
+        if not ip or not _have_ffmpeg():
+            self._text(503, "h264 unavailable")
+            return
+        p_adb = p_ff = None
+        try:
+            p_adb, p_ff = _start_h264(ip)
+        except Exception as e:
+            print(f"[stream] h264 start error: {e}", flush=True)
+            self._text(503, "h264 start failed")
+            return
+
+        self.send_response(200)
+        self.send_header("Content-Type", "video/mp4")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        try:
+            while True:
+                chunk = p_ff.stdout.read(8192)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception as e:
+            print(f"[stream] h264 relay error: {e}", flush=True)
+        finally:
+            for p in (p_ff, p_adb):
+                if p:
+                    try:
+                        p.kill()
+                    except Exception:
+                        pass
+
+    def _mjpeg(self):
         global _viewers
         self.send_response(200)
         self.send_header("Content-Type",
@@ -273,11 +438,11 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.write(frame)
                     self.wfile.write(b"\r\n")
                 else:
-                    time.sleep(0.03)  # wait for a fresh frame
+                    time.sleep(0.03)
         except (BrokenPipeError, ConnectionResetError):
-            pass  # browser closed the tab
+            pass
         except Exception as e:
-            print(f"[stream] frame error: {e}", flush=True)
+            print(f"[stream] mjpeg error: {e}", flush=True)
         finally:
             with _viewers_lock:
                 _viewers -= 1
@@ -288,13 +453,12 @@ def main():
     if len(sys.argv) > 1:
         PORT = int(sys.argv[1])
 
-    # Resolve the Fire Stick before serving; keep retrying so the service
-    # survives being started before the Fire Stick is online.
     while not _ensure_ip():
         print("[stream] Fire Stick not found yet, retrying in 10s...", flush=True)
         time.sleep(10)
 
-    print(f"[stream] Serving live remote on port {PORT}", flush=True)
+    kind = "H.264" if _have_ffmpeg() else "MJPEG-only (ffmpeg missing)"
+    print(f"[stream] Serving live remote ({kind}) on port {PORT}", flush=True)
     server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     server.serve_forever()
 
