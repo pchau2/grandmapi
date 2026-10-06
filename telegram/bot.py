@@ -174,10 +174,10 @@ def ensure_connected():
             return True
         connected_ip = None
 
-    send("Scanning for Fire Stick...")
+    send("🔍 Scanning for Fire Stick...")
     devices = discovery.scan()
     if not devices:
-        send("No Fire Stick found on the network.")
+        send("❌ No Fire Stick found on the network.")
         return False
 
     for ip in devices:
@@ -185,10 +185,10 @@ def ensure_connected():
             connected_ip = ip
             name = adb_manager.get_device_name(ip)
             adb_manager.disable_voice(ip)
-            send(f"Connected to {name} ({ip})")
+            send(f"✅ Connected to *{name}* (`{ip}`)")
             return True
 
-    send("Found a device but couldn't connect. Make sure ADB is enabled on the Fire Stick.")
+    send("❌ Found a device but couldn't connect. Make sure ADB debugging is enabled on the Fire Stick.")
     return False
 
 
@@ -232,10 +232,12 @@ def handle_command(text):
             fs_status = "Not connected"
         wifi_icon = "✅" if wifi else "❌"
         fs_icon = "✅" if connected_ip else "❌"
+        lock_line = "\n🔒 YouTube lock: *Active*" if _ytlock_active else ""
         send(
             f"*grandmapi status* 📡\n\n"
             f"{wifi_icon} WiFi: {'Connected' if wifi else 'Disconnected'}\n"
             f"{fs_icon} Fire Stick: {fs_status}"
+            f"{lock_line}"
         )
 
     elif cmd == "/screenshot":

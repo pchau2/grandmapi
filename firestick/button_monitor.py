@@ -127,7 +127,7 @@ if __name__ == "__main__":
     def on_help():
         _log("[button_monitor] Mic button pressed — sending help alert!")
         try:
-            send()
+            send(connected_ip)
         except Exception as e:
             _log(f"[button_monitor] Error sending alert: {e}")
 
