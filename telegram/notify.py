@@ -10,7 +10,6 @@ CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 ALERT_TEXT = (
     "🆘 *GRANDMA NEEDS HELP!*\n\n"
-    "She pressed the mic button on the remote.\n\n"
     "*Quick actions:*\n"
     "/screenshot — See what's on screen\n"
     "/history — Resume most recent video\n"

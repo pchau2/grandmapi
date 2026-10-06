@@ -122,10 +122,9 @@ def _wifi_monitor_loop():
 
 def _firestick_monitor_loop():
     global connected_ip
-    last_state = None
+    was_connected = False
 
     while True:
-        time.sleep(FS_CHECK_INTERVAL)
         if connected_ip:
             ok, _, _ = adb_manager._adb(connected_ip, "shell", "echo", "ok", timeout=5)
             if not ok:
@@ -136,20 +135,20 @@ def _firestick_monitor_loop():
                 )
                 print(f"[monitor] Fire Stick {connected_ip} disconnected.")
                 connected_ip = None
-                last_state = "disconnected"
+                was_connected = True
         else:
-            if last_state != "scanning":
-                last_state = "scanning"
             devices = discovery.scan()
             for ip in devices:
                 if adb_manager.connect(ip):
                     connected_ip = ip
                     name = adb_manager.get_device_name(ip)
                     adb_manager.disable_voice(ip)
-                    send(f"✅ *Fire Stick reconnected*\n\n*{name}* (`{ip}`)")
-                    print(f"[monitor] Fire Stick {ip} reconnected.")
-                    last_state = "connected"
+                    if was_connected:
+                        send(f"✅ *Fire Stick reconnected*\n\n*{name}* (`{ip}`)")
+                    print(f"[monitor] Fire Stick {ip} connected.")
+                    was_connected = False
                     break
+        time.sleep(FS_CHECK_INTERVAL)
 
 
 def _ytlock_monitor_loop():
