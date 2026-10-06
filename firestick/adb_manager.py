@@ -177,6 +177,18 @@ def send_key(ip, keycode):
     _adb(ip, "shell", "input", "keyevent", str(keycode))
 
 
+def keep_awake(ip):
+    """Prevent the Fire Stick from sleeping so the ADB-over-WiFi link stays up 24/7.
+
+    Sleep/standby is the main cause of ADB drops — keeping the device awake
+    while powered keeps the connection (and the mic-button watcher) alive.
+    """
+    _adb(ip, "shell", "svc", "power", "stayon", "true")
+    _adb(ip, "shell", "settings", "put", "global", "stay_on_while_plugged_in", "7")
+    _adb(ip, "shell", "settings", "put", "secure", "sleep_timeout", "-1")
+    _adb(ip, "shell", "settings", "put", "system", "screen_off_timeout", "2147483647")
+
+
 def disable_voice(ip):
     """Disable Amazon voice search so mic button does nothing on Fire Stick."""
     _adb(ip, "shell", "pm", "disable-user", "--user", "0", "com.amazon.bueller")

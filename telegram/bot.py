@@ -583,6 +583,7 @@ def _firestick_monitor_loop():
                     connected_ip = ip
                     name = adb_manager.get_device_name(ip)
                     adb_manager.disable_voice(ip)
+                    adb_manager.keep_awake(ip)
                     adb_manager.lock_to_youtube(ip)
                     print(f"[monitor] Fire Stick {ip} connected.")
                     if _startup_msg_id:
@@ -642,6 +643,7 @@ def ensure_connected():
             connected_ip = ip
             name = adb_manager.get_device_name(ip)
             adb_manager.disable_voice(ip)
+            adb_manager.keep_awake(ip)
             adb_manager.lock_to_youtube(ip)
             send(f"✅ Connected to *{name}* (`{ip}`)")
             return True
@@ -901,6 +903,7 @@ def run():
         if adb_manager.connect(ip):
             connected_ip = ip
             adb_manager.disable_voice(ip)
+            adb_manager.keep_awake(ip)
             adb_manager.lock_to_youtube(ip)
             print(f"[startup] Connected to Fire Stick at {ip}")
             break

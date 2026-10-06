@@ -7,9 +7,10 @@ import threading
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-POLL_INTERVAL = 30   # seconds between reconnect attempts
+POLL_INTERVAL = 5    # seconds between reconnect attempts when disconnected
 
 connected_ip = None
+_last_ip = None           # remember the IP so we can reconnect fast without a full scan
 on_help_triggered = None  # callback set by caller
 
 
@@ -58,19 +59,34 @@ def _watch_events(ip):
 
 
 def _connect_and_watch(ip):
-    global connected_ip
+    global connected_ip, _last_ip
     from firestick import adb_manager
     _log(f"[button_monitor] Connecting to {ip}...")
     if adb_manager.connect(ip):
         connected_ip = ip
-        _log(f"[button_monitor] Connected to {ip}, disabling voice...")
+        _last_ip = ip
+        _log(f"[button_monitor] Connected to {ip}, configuring (keep-awake, disable voice)...")
+        adb_manager.keep_awake(ip)       # stop it sleeping so the link stays up 24/7
         adb_manager.disable_voice(ip)
         _log(f"[button_monitor] Watching for mic button on {ip}")
         _watch_events(ip)
         _log(f"[button_monitor] Lost connection to {ip}")
         connected_ip = None
-    else:
-        _log(f"[button_monitor] Could not connect to {ip}")
+        return True
+    _log(f"[button_monitor] Could not connect to {ip}")
+    return False
+
+
+def _reconnect_last():
+    """Fast path: reconnect straight to the last known IP without a full scan."""
+    if not _last_ip:
+        return False
+    _log(f"[button_monitor] Trying fast reconnect to last IP {_last_ip}...")
+    try:
+        return _connect_and_watch(_last_ip)
+    except Exception as e:
+        _log(f"[button_monitor] Fast reconnect error: {e}")
+        return False
 
 
 def _scan_and_connect():
@@ -101,7 +117,10 @@ def run(help_callback):
     _log("[button_monitor] Starting main loop...")
     while True:
         if not connected_ip:
-            _scan_and_connect()
+            # Reconnecting to the known IP is near-instant; only fall back to a
+            # full subnet scan if that fails (e.g. the IP changed).
+            if not _reconnect_last():
+                _scan_and_connect()
         time.sleep(POLL_INTERVAL)
 
 
