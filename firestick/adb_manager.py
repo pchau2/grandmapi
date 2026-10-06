@@ -74,6 +74,20 @@ def send_key(ip, keycode):
     _adb(ip, "shell", "input", "keyevent", str(keycode))
 
 
+def disable_voice(ip):
+    """Disable Amazon voice search so mic button does nothing on Fire Stick."""
+    _adb(ip, "shell", "pm", "disable-user", "--user", "0", "com.amazon.bueller")
+    _adb(ip, "shell", "pm", "disable-user", "--user", "0", "com.amazon.alexaautomotiveclientservice")
+    _adb(ip, "shell", "pm", "disable-user", "--user", "0", "com.amazon.dee.app")
+
+
+def enable_voice(ip):
+    """Re-enable Amazon voice search."""
+    _adb(ip, "shell", "pm", "enable", "com.amazon.bueller")
+    _adb(ip, "shell", "pm", "enable", "com.amazon.alexaautomotiveclientservice")
+    _adb(ip, "shell", "pm", "enable", "com.amazon.dee.app")
+
+
 # Common Fire TV keycodes
 KEY_HOME = 3
 KEY_BACK = 4

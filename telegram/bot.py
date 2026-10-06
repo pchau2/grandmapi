@@ -182,6 +182,8 @@ HELP_TEXT = (
     "/youtube - Open YouTube\n"
     "/lock - Lock Fire Stick to YouTube only\n"
     "/unlock - Restore normal Fire Stick access\n"
+    "/disablemic - Disable voice search (mic button = help alert only)\n"
+    "/enablemic - Re-enable voice search\n"
     "/reboot - Reboot the Fire Stick\n"
     "/status - Check connection status\n"
     "/help - Show this message"
@@ -240,6 +242,18 @@ def handle_command(text):
             return
         adb_manager.unlock(connected_ip)
         send("Fire Stick unlocked.")
+
+    elif cmd == "/disablemic":
+        if not ensure_connected():
+            return
+        adb_manager.disable_voice(connected_ip)
+        send("Mic button disabled. It will now only trigger the help alert.")
+
+    elif cmd == "/enablemic":
+        if not ensure_connected():
+            return
+        adb_manager.enable_voice(connected_ip)
+        send("Mic button re-enabled. Voice search restored.")
 
     elif cmd == "/reboot":
         if not ensure_connected():
