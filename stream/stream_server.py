@@ -22,7 +22,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from firestick import adb_manager, discovery
 
 PORT = 8080
-FRAME_INTERVAL = 0.0   # capture back-to-back; screencap speed is the real limit
 
 # Frame size/quality — smaller + lower quality = faster. Tunable via env.
 STREAM_WIDTH = int(os.environ.get("STREAM_WIDTH", "480"))
@@ -30,6 +29,14 @@ STREAM_QUALITY = int(os.environ.get("STREAM_QUALITY", "45"))
 
 _firestick_ip = None
 _ip_lock = threading.Lock()
+
+# Shared latest-frame buffer: one capture loop feeds all viewers, so capturing
+# runs continuously at full speed and never blocks on a slow client.
+_latest = {"frame": None, "ctype": None, "seq": 0}
+_frame_lock = threading.Lock()
+_viewers = 0
+_viewers_lock = threading.Lock()
+_capture_thread = None
 
 # Button action -> handler. Key actions send a keyevent; the rest run a helper.
 KEY_ACTIONS = {
@@ -146,6 +153,42 @@ def _ensure_ip():
         return None
 
 
+def _capture_loop():
+    """Continuously grab frames into the shared buffer while anyone is watching."""
+    global _capture_thread
+    misses = 0
+    while True:
+        with _viewers_lock:
+            if _viewers <= 0:
+                _capture_thread = None  # last viewer left; stop capturing
+                return
+        ip = _firestick_ip or _ensure_ip()
+        frame = ctype = None
+        if ip:
+            frame, ctype = adb_manager.capture_jpeg_bytes(
+                ip, max_width=STREAM_WIDTH, quality=STREAM_QUALITY)
+        if frame:
+            misses = 0
+            with _frame_lock:
+                _latest["frame"] = frame
+                _latest["ctype"] = ctype
+                _latest["seq"] += 1
+        else:
+            misses += 1
+            if misses >= 3:
+                _ensure_ip()
+                misses = 0
+            time.sleep(1)
+
+
+def _start_capture():
+    global _capture_thread
+    with _viewers_lock:
+        if _capture_thread is None or not _capture_thread.is_alive():
+            _capture_thread = threading.Thread(target=_capture_loop, daemon=True)
+            _capture_thread.start()
+
+
 def _do_action(action):
     """Run a control-pad action. Returns True on success."""
     ip = _firestick_ip or _ensure_ip()
@@ -202,21 +245,26 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _stream(self):
+        global _viewers
         self.send_response(200)
         self.send_header("Content-Type",
                          "multipart/x-mixed-replace; boundary=frame")
         self.send_header("Cache-Control", "no-cache")
         self.end_headers()
-        misses = 0
+
+        with _viewers_lock:
+            _viewers += 1
+        _start_capture()
+
+        last_seq = -1
         try:
             while True:
-                ip = _firestick_ip or _ensure_ip()
-                frame = ctype = None
-                if ip:
-                    frame, ctype = adb_manager.capture_jpeg_bytes(
-                        ip, max_width=STREAM_WIDTH, quality=STREAM_QUALITY)
-                if frame:
-                    misses = 0
+                with _frame_lock:
+                    seq = _latest["seq"]
+                    frame = _latest["frame"]
+                    ctype = _latest["ctype"]
+                if frame is not None and seq != last_seq:
+                    last_seq = seq
                     self.wfile.write(b"--frame\r\n")
                     self.wfile.write(
                         f"Content-Type: {ctype}\r\n"
@@ -225,16 +273,14 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.write(frame)
                     self.wfile.write(b"\r\n")
                 else:
-                    misses += 1
-                    if misses >= 3:
-                        _ensure_ip()  # cached IP likely stale; re-resolve
-                        misses = 0
-                    time.sleep(1)
-                time.sleep(FRAME_INTERVAL)
+                    time.sleep(0.03)  # wait for a fresh frame
         except (BrokenPipeError, ConnectionResetError):
             pass  # browser closed the tab
         except Exception as e:
             print(f"[stream] frame error: {e}", flush=True)
+        finally:
+            with _viewers_lock:
+                _viewers -= 1
 
 
 def main():
