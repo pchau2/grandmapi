@@ -22,7 +22,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from firestick import adb_manager, discovery
 
 PORT = 8080
-FRAME_INTERVAL = 0.1   # minimum gap between captures; capture itself is the real limit
+FRAME_INTERVAL = 0.0   # capture back-to-back; screencap speed is the real limit
+
+# Frame size/quality — smaller + lower quality = faster. Tunable via env.
+STREAM_WIDTH = int(os.environ.get("STREAM_WIDTH", "480"))
+STREAM_QUALITY = int(os.environ.get("STREAM_QUALITY", "45"))
 
 _firestick_ip = None
 _ip_lock = threading.Lock()
@@ -46,6 +50,7 @@ KEY_ACTIONS = {
 PAGE = """<!doctype html>
 <html>
 <head>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fire Stick — live remote</title>
 <style>
@@ -189,9 +194,9 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def _html(self, html):
-        body = html.encode()
+        body = html.encode("utf-8")
         self.send_response(200)
-        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -208,7 +213,8 @@ class Handler(BaseHTTPRequestHandler):
                 ip = _firestick_ip or _ensure_ip()
                 frame = ctype = None
                 if ip:
-                    frame, ctype = adb_manager.capture_jpeg_bytes(ip)
+                    frame, ctype = adb_manager.capture_jpeg_bytes(
+                        ip, max_width=STREAM_WIDTH, quality=STREAM_QUALITY)
                 if frame:
                     misses = 0
                     self.wfile.write(b"--frame\r\n")
