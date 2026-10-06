@@ -3,6 +3,7 @@ import os
 import sys
 import json
 import time
+import datetime
 import threading
 import subprocess
 import urllib.request
@@ -16,12 +17,53 @@ CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 connected_ip = None
 _wifi_was_connected = True
-_ytlock_active = False
+_ytlock_active = True
 
-HEARTBEAT_INTERVAL = 86400   # 24 hours
+HEARTBEAT_HOUR = 9           # send daily check-in at 9 AM
 WIFI_CHECK_INTERVAL = 60     # 1 minute
 FS_CHECK_INTERVAL = 120      # 2 minutes
 YTLOCK_CHECK_INTERVAL = 10   # 10 seconds
+
+REMOTE_KEYBOARD = json.dumps({
+    "inline_keyboard": [
+        [{"text": "▲", "callback_data": "key_up"}],
+        [
+            {"text": "◀", "callback_data": "key_left"},
+            {"text": "✅ OK", "callback_data": "key_select"},
+            {"text": "▶", "callback_data": "key_right"}
+        ],
+        [{"text": "▼", "callback_data": "key_down"}],
+        [
+            {"text": "🏠 Home", "callback_data": "key_home"},
+            {"text": "↩ Back", "callback_data": "key_back"}
+        ],
+        [
+            {"text": "⏮", "callback_data": "key_rew"},
+            {"text": "⏯", "callback_data": "key_play"},
+            {"text": "⏭", "callback_data": "key_fwd"}
+        ],
+        [
+            {"text": "🔊+", "callback_data": "key_vol_up"},
+            {"text": "🔊–", "callback_data": "key_vol_down"}
+        ],
+        [{"text": "📸 Refresh screenshot", "callback_data": "refresh"}]
+    ]
+})
+
+KEY_MAP = {
+    "key_up":      adb_manager.KEY_UP,
+    "key_down":    adb_manager.KEY_DOWN,
+    "key_left":    adb_manager.KEY_LEFT,
+    "key_right":   adb_manager.KEY_RIGHT,
+    "key_select":  adb_manager.KEY_SELECT,
+    "key_home":    adb_manager.KEY_HOME,
+    "key_back":    adb_manager.KEY_BACK,
+    "key_play":    adb_manager.KEY_PLAY_PAUSE,
+    "key_vol_up":  adb_manager.KEY_VOLUME_UP,
+    "key_vol_down": adb_manager.KEY_VOLUME_DOWN,
+    "key_rew":     89,   # KEYCODE_MEDIA_REWIND
+    "key_fwd":     90,   # KEYCODE_MEDIA_FAST_FORWARD
+}
 
 
 # ------------------------------------------------------------------ API helpers
@@ -57,6 +99,77 @@ def pin_message(message_id):
     if message_id:
         _api_post("pinChatMessage", chat_id=CHAT_ID, message_id=message_id,
                   disable_notification=True)
+
+
+def answer_callback(callback_query_id, text=""):
+    _api_post("answerCallbackQuery", callback_query_id=callback_query_id, text=text)
+
+
+def edit_photo_message(message_id, photo_path, caption):
+    """Replace the photo in an existing message with a fresh screenshot."""
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/editMessageMedia"
+    boundary = "grandmapiboundary"
+    media = json.dumps({
+        "type": "photo",
+        "media": "attach://photo",
+        "caption": caption,
+        "parse_mode": "Markdown"
+    })
+    with open(photo_path, "rb") as f:
+        photo_data = f.read()
+    body = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="chat_id"\r\n\r\n'
+        f"{CHAT_ID}\r\n"
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="message_id"\r\n\r\n'
+        f"{message_id}\r\n"
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="media"\r\n\r\n'
+        f"{media}\r\n"
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="reply_markup"\r\n\r\n'
+        f"{REMOTE_KEYBOARD}\r\n"
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="photo"; filename="screen.png"\r\n'
+        f"Content-Type: image/png\r\n\r\n"
+    ).encode() + photo_data + f"\r\n--{boundary}--\r\n".encode()
+    req = urllib.request.Request(url, data=body)
+    req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return json.loads(resp.read())
+    except Exception as e:
+        print(f"[callback] edit_photo_message error: {e}")
+        return {"ok": False}
+
+
+def handle_callback(callback_query):
+    query_id = callback_query["id"]
+    data = callback_query.get("data", "")
+    message = callback_query.get("message", {})
+    message_id = message.get("message_id")
+    is_photo = "photo" in message
+    caption = message.get("caption") or message.get("text", "🆘 *GRANDMA NEEDS HELP!*")
+
+    if not connected_ip:
+        answer_callback(query_id, "⚠️ Fire Stick not connected")
+        return
+
+    answer_callback(query_id)
+
+    if data in KEY_MAP:
+        adb_manager.send_key(connected_ip, KEY_MAP[data])
+        time.sleep(0.8)
+
+    # Take a fresh screenshot and update the message
+    path = adb_manager.screenshot(connected_ip)
+    if path and message_id:
+        if is_photo:
+            edit_photo_message(message_id, path, caption)
+        else:
+            # Original was text — upgrade to photo by sending new message
+            send_photo(path, caption)
 
 
 def send_photo(path, caption=""):
@@ -150,7 +263,13 @@ def _is_wifi_connected():
 
 def _heartbeat_loop():
     while True:
-        time.sleep(HEARTBEAT_INTERVAL)
+        # Sleep until next 9 AM
+        now = datetime.datetime.now()
+        next_run = now.replace(hour=HEARTBEAT_HOUR, minute=0, second=0, microsecond=0)
+        if now >= next_run:
+            next_run += datetime.timedelta(days=1)
+        time.sleep((next_run - now).total_seconds())
+
         wifi = _is_wifi_connected()
         wifi_icon = "✅" if wifi else "❌"
         fs_icon = "✅" if connected_ip else "❌"
@@ -208,6 +327,7 @@ def _firestick_monitor_loop():
                     connected_ip = ip
                     name = adb_manager.get_device_name(ip)
                     adb_manager.disable_voice(ip)
+                    adb_manager.lock_to_youtube(ip)
                     if was_connected:
                         send(f"✅ *Fire Stick reconnected*\n\n*{name}* (`{ip}`)")
                     print(f"[monitor] Fire Stick {ip} connected.")
@@ -255,6 +375,7 @@ def ensure_connected():
             connected_ip = ip
             name = adb_manager.get_device_name(ip)
             adb_manager.disable_voice(ip)
+            adb_manager.lock_to_youtube(ip)
             send(f"✅ Connected to *{name}* (`{ip}`)")
             return True
 
@@ -273,9 +394,6 @@ HELP_TEXT = (
     "/ytunlock — Restore normal access\n"
     "/screenshot — Capture the screen\n"
     "/reboot — Reboot the Fire Stick\n\n"
-    "*🎤 Mic Button*\n"
-    "/disablemic — Help alert only _(no voice)_\n"
-    "/enablemic — Re-enable voice search\n\n"
     "*ℹ️ Info*\n"
     "/status — Connection status\n"
     "/help — Show this message"
@@ -304,12 +422,13 @@ def handle_command(text):
         wifi_icon = "✅" if wifi else "❌"
         fs_icon = "✅" if connected_ip else "❌"
         lock_line = "\n🔒 YouTube lock: *Active*" if _ytlock_active else ""
-        send(
+        msg_id = send(
             f"*grandmapi status* 📡\n\n"
             f"{wifi_icon} WiFi: {'Connected' if wifi else 'Disconnected'}\n"
             f"{fs_icon} Fire Stick: {fs_status}"
             f"{lock_line}"
         )
+        pin_message(msg_id)
 
     elif cmd == "/screenshot":
         if not ensure_connected():
@@ -347,18 +466,6 @@ def handle_command(text):
         adb_manager.unlock(connected_ip)
         send("🔓 Fire Stick unlocked — normal access restored.")
 
-    elif cmd == "/disablemic":
-        if not ensure_connected():
-            return
-        adb_manager.disable_voice(connected_ip)
-        send("🔇 *Mic button disabled*\nPressing it will only send you a help alert — no voice search.")
-
-    elif cmd == "/enablemic":
-        if not ensure_connected():
-            return
-        adb_manager.enable_voice(connected_ip)
-        send("🎤 *Mic button re-enabled*\nVoice search is active again.")
-
     elif cmd == "/reboot":
         if not ensure_connected():
             return
@@ -394,20 +501,25 @@ def run():
             result = _api_get("getUpdates", {
                 "offset": offset,
                 "timeout": 30,
-                "allowed_updates": ["message"]
+                "allowed_updates": ["message", "callback_query"]
             })
             if result.get("ok"):
                 for update in result.get("result", []):
                     offset = update["update_id"] + 1
-                    msg = update.get("message", {})
-                    chat_id = str(msg.get("chat", {}).get("id", ""))
-                    text = msg.get("text", "")
 
-                    if chat_id != str(CHAT_ID):
-                        continue
+                    if "callback_query" in update:
+                        cq = update["callback_query"]
+                        if str(cq.get("from", {}).get("id", "")) == str(CHAT_ID):
+                            threading.Thread(
+                                target=handle_callback, args=(cq,), daemon=True
+                            ).start()
 
-                    if text.startswith("/"):
-                        handle_command(text)
+                    elif "message" in update:
+                        msg = update["message"]
+                        chat_id = str(msg.get("chat", {}).get("id", ""))
+                        text = msg.get("text", "")
+                        if chat_id == str(CHAT_ID) and text.startswith("/"):
+                            handle_command(text)
         except Exception as e:
             print(f"Error in bot loop: {e}")
             time.sleep(5)

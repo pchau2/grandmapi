@@ -11,30 +11,37 @@ CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 ALERT_TEXT = (
     "🆘 *GRANDMA NEEDS HELP!*\n\n"
     "*Quick actions:*\n"
-    "/screenshot — See what's on screen\n"
     "/history — Resume most recent video\n"
     "/youtube — Open YouTube\n"
     "/ytlock — Lock to YouTube\n"
-    "/ytunlock — Restore normal access\n"
-    "/status — Check connection\n"
-    "/help — All commands"
+    "/ytunlock — Restore normal access"
 )
 
-
-def _pin(message_id):
-    if not message_id:
-        return
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/pinChatMessage"
-    data = urllib.parse.urlencode({
-        "chat_id": CHAT_ID,
-        "message_id": message_id,
-        "disable_notification": True
-    }).encode()
-    try:
-        req = urllib.request.Request(url, data=data)
-        urllib.request.urlopen(req, timeout=10)
-    except Exception:
-        pass
+REMOTE_KEYBOARD = json.dumps({
+    "inline_keyboard": [
+        [{"text": "▲", "callback_data": "key_up"}],
+        [
+            {"text": "◀", "callback_data": "key_left"},
+            {"text": "✅ OK", "callback_data": "key_select"},
+            {"text": "▶", "callback_data": "key_right"}
+        ],
+        [{"text": "▼", "callback_data": "key_down"}],
+        [
+            {"text": "🏠 Home", "callback_data": "key_home"},
+            {"text": "↩ Back", "callback_data": "key_back"}
+        ],
+        [
+            {"text": "⏮", "callback_data": "key_rew"},
+            {"text": "⏯", "callback_data": "key_play"},
+            {"text": "⏭", "callback_data": "key_fwd"}
+        ],
+        [
+            {"text": "🔊+", "callback_data": "key_vol_up"},
+            {"text": "🔊–", "callback_data": "key_vol_down"}
+        ],
+        [{"text": "📸 Refresh screenshot", "callback_data": "refresh"}]
+    ]
+})
 
 
 def _send_message(text):
@@ -42,7 +49,8 @@ def _send_message(text):
     data = urllib.parse.urlencode({
         "chat_id": CHAT_ID,
         "text": text,
-        "parse_mode": "Markdown"
+        "parse_mode": "Markdown",
+        "reply_markup": REMOTE_KEYBOARD
     }).encode()
     req = urllib.request.Request(url, data=data)
     with urllib.request.urlopen(req, timeout=10) as resp:
@@ -65,6 +73,9 @@ def _send_photo(path, caption):
         f"--{boundary}\r\n"
         f'Content-Disposition: form-data; name="caption"\r\n\r\n'
         f"{caption}\r\n"
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="reply_markup"\r\n\r\n'
+        f"{REMOTE_KEYBOARD}\r\n"
         f"--{boundary}\r\n"
         f'Content-Disposition: form-data; name="photo"; filename="screen.png"\r\n'
         f"Content-Type: image/png\r\n\r\n"
@@ -92,16 +103,14 @@ def send(ip=None):
 
     try:
         if screenshot_path:
-            msg_id = _send_photo(screenshot_path, ALERT_TEXT)
+            _send_photo(screenshot_path, ALERT_TEXT)
         else:
-            msg_id = _send_message(ALERT_TEXT)
-        _pin(msg_id)
+            _send_message(ALERT_TEXT)
         return True
     except Exception as e:
         print(f"Failed to send alert: {e}")
         try:
-            msg_id = _send_message(ALERT_TEXT)
-            _pin(msg_id)
+            _send_message(ALERT_TEXT)
         except Exception:
             pass
         return False
