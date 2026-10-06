@@ -455,7 +455,12 @@ HELP_TEXT = (
     "/ytlock — Lock to YouTube only\n"
     "/ytunlock — Restore normal access\n"
     "/screenshot — Capture the screen\n"
+    "/restarttv — Reconnect ADB to Fire Stick\n"
     "/reboot — Reboot the Fire Stick\n\n"
+    "*🖥 Pi*\n"
+    "/restart — Restart grandmapi services\n"
+    "/update — Pull latest code and restart\n"
+    "/logs — Show recent service logs\n\n"
     "*ℹ️ Info*\n"
     "/status — Connection status\n"
     "/heartbeat — Send daily check-in now\n"
@@ -558,6 +563,37 @@ def handle_command(text):
 
     elif cmd == "/support":
         notify.send(connected_ip)
+
+    elif cmd == "/restarttv":
+        if connected_ip:
+            adb_manager.disconnect(connected_ip)
+            connected_ip = None
+        send("🔄 *Fire Stick ADB reset.*\nReconnecting automatically within 30 seconds...")
+
+    elif cmd == "/restart":
+        send("🔄 *Restarting grandmapi services...*\nBack online in a few seconds.")
+        subprocess.Popen(["sudo", "systemctl", "restart", "grandmapi-telegram", "grandmapi-monitor"])
+
+    elif cmd == "/update":
+        send("⬇️ *Pulling latest code...*")
+        result = subprocess.run(
+            ["git", "-C", "/home/admin/grandmapi", "pull"],
+            capture_output=True, text=True
+        )
+        out = (result.stdout.strip() or result.stderr.strip())[:800]
+        send(f"```\n{out}\n```\n\n🔄 Restarting services...")
+        subprocess.Popen(["sudo", "systemctl", "restart", "grandmapi-telegram", "grandmapi-monitor"])
+
+    elif cmd == "/logs":
+        parts = []
+        for svc in ["grandmapi-telegram", "grandmapi-monitor", "grandmapi-wifi"]:
+            result = subprocess.run(
+                ["sudo", "journalctl", "-u", svc, "--no-pager", "-n", "10"],
+                capture_output=True, text=True
+            )
+            out = result.stdout.strip()[-600:] if result.stdout.strip() else "(no output)"
+            parts.append(f"*{svc}:*\n```\n{out}\n```")
+        send("\n\n".join(parts))
 
     else:
         send(f"❓ Unknown command: `{cmd}`\n\nType /help to see all available commands.")
