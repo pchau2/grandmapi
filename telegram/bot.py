@@ -49,7 +49,14 @@ def _api_post(method, **params):
 
 
 def send(text):
-    _api_post("sendMessage", chat_id=CHAT_ID, text=text, parse_mode="Markdown")
+    result = _api_post("sendMessage", chat_id=CHAT_ID, text=text, parse_mode="Markdown")
+    return result.get("result", {}).get("message_id")
+
+
+def pin_message(message_id):
+    if message_id:
+        _api_post("pinChatMessage", chat_id=CHAT_ID, message_id=message_id,
+                  disable_notification=True)
 
 
 def send_photo(path, caption=""):
@@ -72,12 +79,64 @@ def send_photo(path, caption=""):
     req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.loads(resp.read())
+            result = json.loads(resp.read())
+            return result.get("result", {}).get("message_id")
     except Exception:
-        return {"ok": False}
+        return None
 
 
 # ------------------------------------------------------------------ monitoring
+
+def _service_status(name):
+    try:
+        r = subprocess.run(["systemctl", "is-active", name],
+                           capture_output=True, text=True, timeout=5)
+        return r.stdout.strip()
+    except Exception:
+        return "unknown"
+
+
+def _health_report():
+    services = [
+        ("grandmapi-telegram", "Bot"),
+        ("grandmapi-monitor", "Fire Stick monitor"),
+        ("grandmapi-wifi", "WiFi GUI"),
+        ("tailscaled", "Tailscale"),
+        ("ssh", "SSH"),
+    ]
+    lines = []
+    for svc, label in services:
+        st = _service_status(svc)
+        icon = "✅" if st == "active" else "❌"
+        lines.append(f"{icon} {label}")
+    svc_block = "\n".join(lines)
+
+    # Tailscale IP
+    try:
+        ts = subprocess.run(["tailscale", "ip", "-4"],
+                            capture_output=True, text=True, timeout=5)
+        ts_ip = ts.stdout.strip() if ts.returncode == 0 else "unavailable"
+    except Exception:
+        ts_ip = "unavailable"
+
+    # Disk usage
+    try:
+        df = subprocess.run(["df", "-h", "/"], capture_output=True, text=True, timeout=5)
+        parts = df.stdout.strip().split("\n")[-1].split()
+        disk = f"{parts[2]} used of {parts[1]} ({parts[4]})"
+    except Exception:
+        disk = "unavailable"
+
+    # Memory
+    try:
+        mem = subprocess.run(["free", "-h"], capture_output=True, text=True, timeout=5)
+        parts = mem.stdout.strip().split("\n")[1].split()
+        memory = f"{parts[2]} used of {parts[1]}"
+    except Exception:
+        memory = "unavailable"
+
+    return svc_block, ts_ip, disk, memory
+
 
 def _is_wifi_connected():
     try:
@@ -93,16 +152,22 @@ def _heartbeat_loop():
     while True:
         time.sleep(HEARTBEAT_INTERVAL)
         wifi = _is_wifi_connected()
-        fs = "Connected" if connected_ip else "Not connected"
         wifi_icon = "✅" if wifi else "❌"
         fs_icon = "✅" if connected_ip else "❌"
+        fs = "Connected" if connected_ip else "Not connected"
         lock_line = "\n🔒 YouTube lock: *Active*" if _ytlock_active else ""
-        send(
+        svc_block, ts_ip, disk, memory = _health_report()
+        msg_id = send(
             f"💓 *grandmapi daily check-in*\n\n"
             f"{wifi_icon} WiFi: {'Connected' if wifi else 'Disconnected'}\n"
             f"{fs_icon} Fire Stick: {fs}"
-            f"{lock_line}"
+            f"{lock_line}\n\n"
+            f"*Services:*\n{svc_block}\n\n"
+            f"🌐 Tailscale: `{ts_ip}`\n"
+            f"💾 Disk: {disk}\n"
+            f"🧠 RAM: {memory}"
         )
+        pin_message(msg_id)
 
 
 def _wifi_monitor_loop():
@@ -314,11 +379,12 @@ def run():
 
     print("grandmapi bot started.")
     wifi = _is_wifi_connected()
-    send(
+    msg_id = send(
         f"✅ *grandmapi is online* 🏠\n\n"
         f"{'✅' if wifi else '❌'} WiFi: {'Connected' if wifi else 'Disconnected'}\n\n"
         f"Type /help for available commands."
     )
+    pin_message(msg_id)
 
     start_monitors()
 

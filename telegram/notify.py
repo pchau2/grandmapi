@@ -21,6 +21,22 @@ ALERT_TEXT = (
 )
 
 
+def _pin(message_id):
+    if not message_id:
+        return
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/pinChatMessage"
+    data = urllib.parse.urlencode({
+        "chat_id": CHAT_ID,
+        "message_id": message_id,
+        "disable_notification": True
+    }).encode()
+    try:
+        req = urllib.request.Request(url, data=data)
+        urllib.request.urlopen(req, timeout=10)
+    except Exception:
+        pass
+
+
 def _send_message(text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     data = urllib.parse.urlencode({
@@ -30,7 +46,8 @@ def _send_message(text):
     }).encode()
     req = urllib.request.Request(url, data=data)
     with urllib.request.urlopen(req, timeout=10) as resp:
-        return json.loads(resp.read()).get("ok", False)
+        result = json.loads(resp.read())
+        return result.get("result", {}).get("message_id")
 
 
 def _send_photo(path, caption):
@@ -55,7 +72,8 @@ def _send_photo(path, caption):
     req = urllib.request.Request(url, data=body)
     req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
     with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read()).get("ok", False)
+        result = json.loads(resp.read())
+        return result.get("result", {}).get("message_id")
 
 
 def send(ip=None):
@@ -74,15 +92,19 @@ def send(ip=None):
 
     try:
         if screenshot_path:
-            return _send_photo(screenshot_path, ALERT_TEXT)
+            msg_id = _send_photo(screenshot_path, ALERT_TEXT)
         else:
-            return _send_message(ALERT_TEXT)
+            msg_id = _send_message(ALERT_TEXT)
+        _pin(msg_id)
+        return True
     except Exception as e:
         print(f"Failed to send alert: {e}")
         try:
-            return _send_message(ALERT_TEXT)
+            msg_id = _send_message(ALERT_TEXT)
+            _pin(msg_id)
         except Exception:
-            return False
+            pass
+        return False
 
 
 if __name__ == "__main__":
