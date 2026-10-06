@@ -27,6 +27,12 @@ HEARTBEAT_HOUR = 9           # send daily check-in at 9 AM
 WIFI_CHECK_INTERVAL = 60     # 1 minute
 FS_CHECK_INTERVAL = 120      # 2 minutes
 YTLOCK_CHECK_INTERVAL = 10   # 10 seconds
+HEALTH_CHECK_INTERVAL = 1800 # 30 minutes
+
+# Health alert thresholds — alert on crossing, recover below the hysteresis gap
+TEMP_WARN_C = 75             # alert above this
+TEMP_CLEAR_C = 68            # consider recovered below this
+DISK_WARN_PCT = 90           # alert at/above this % used
 
 REMOTE_KEYBOARD = json.dumps({
     "inline_keyboard": [
@@ -413,6 +419,72 @@ def _throttle_status():
         return "unavailable"
 
 
+def _cpu_temp_c():
+    try:
+        with open("/sys/class/thermal/thermal_zone0/temp") as f:
+            return int(f.read().strip()) / 1000
+    except Exception:
+        return None
+
+
+def _disk_percent():
+    try:
+        df = subprocess.run(["df", "/"], capture_output=True, text=True, timeout=5)
+        return int(df.stdout.strip().split("\n")[-1].split()[4].rstrip("%"))
+    except Exception:
+        return None
+
+
+def _is_throttled_now():
+    """Return True only if currently throttled (bit 2), not just 'has throttled before'."""
+    try:
+        r = subprocess.run(["vcgencmd", "get_throttled"], capture_output=True, text=True, timeout=5)
+        val = int(r.stdout.strip().split("=")[-1], 16)
+        return bool(val & 0x4)  # bit 2 = currently throttled
+    except Exception:
+        return False
+
+
+_health_state = {"temp": False, "disk": False, "throttle": False}
+
+
+def _health_alert_loop():
+    """Alert once when a hardware problem appears, once more when it clears."""
+    while True:
+        time.sleep(HEALTH_CHECK_INTERVAL)
+        try:
+            # CPU temperature (hysteresis so it doesn't flap around the threshold)
+            temp = _cpu_temp_c()
+            if temp is not None:
+                if not _health_state["temp"] and temp >= TEMP_WARN_C:
+                    _health_state["temp"] = True
+                    send(f"🔥 *Pi running hot*\nCPU is {temp:.1f}°C. Check ventilation or placement.")
+                elif _health_state["temp"] and temp <= TEMP_CLEAR_C:
+                    _health_state["temp"] = False
+                    send(f"✅ *Pi temperature back to normal* ({temp:.1f}°C)")
+
+            # Disk space
+            disk = _disk_percent()
+            if disk is not None:
+                if not _health_state["disk"] and disk >= DISK_WARN_PCT:
+                    _health_state["disk"] = True
+                    send(f"💾 *SD card almost full*\n{disk}% used. Free up space soon to avoid failures.")
+                elif _health_state["disk"] and disk < DISK_WARN_PCT - 5:
+                    _health_state["disk"] = False
+                    send(f"✅ *Disk space recovered* ({disk}% used)")
+
+            # Power/throttle
+            throttled = _is_throttled_now()
+            if throttled and not _health_state["throttle"]:
+                _health_state["throttle"] = True
+                send("⚡ *Pi is being throttled*\nLikely an underpowered supply or overheating. Check the power adapter.")
+            elif not throttled and _health_state["throttle"]:
+                _health_state["throttle"] = False
+                send("✅ *Pi throttling cleared*")
+        except Exception as e:
+            print(f"[health] alert loop error: {e}")
+
+
 def _is_wifi_connected():
     try:
         result = subprocess.run(
@@ -524,6 +596,7 @@ def start_monitors():
     threading.Thread(target=_wifi_monitor_loop, daemon=True).start()
     threading.Thread(target=_firestick_monitor_loop, daemon=True).start()
     threading.Thread(target=_ytlock_monitor_loop, daemon=True).start()
+    threading.Thread(target=_health_alert_loop, daemon=True).start()
 
 
 # ------------------------------------------------------------------ Fire Stick
