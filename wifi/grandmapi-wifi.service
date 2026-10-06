@@ -2,14 +2,17 @@
 Description=grandmapi WiFi Setup GUI
 After=graphical.target
 Wants=graphical.target
+# Never stop retrying, no matter how many times it crashes
+StartLimitIntervalSec=0
 
 [Service]
 User=admin
 Environment=DISPLAY=:0
 Environment=XAUTHORITY=/home/admin/.Xauthority
+Environment=PYTHONUNBUFFERED=1
 WorkingDirectory=/home/admin/grandmapi/wifi
 ExecStart=/usr/bin/python3 /home/admin/grandmapi/wifi/main.py
-Restart=on-failure
+Restart=always
 RestartSec=5
 
 [Install]

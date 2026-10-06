@@ -2,6 +2,8 @@
 Description=grandmapi Fire Stick Button Monitor
 After=network-online.target
 Wants=network-online.target
+# Never stop retrying, no matter how many times it crashes
+StartLimitIntervalSec=0
 
 [Service]
 User=admin
