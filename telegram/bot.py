@@ -451,7 +451,8 @@ HELP_TEXT = (
     "*grandmapi* 🏠\n\n"
     "*📺 Fire Stick*\n"
     "/youtube — Open YouTube\n"
-    "/history — Resume most recent YouTube video\n"
+    "/resetyt — Force-restart YouTube to home screen\n"
+    "/history — Open YouTube history\n"
     "/ytlock — Lock to YouTube only\n"
     "/ytunlock — Restore normal access\n"
     "/screenshot — Capture the screen\n"
@@ -533,6 +534,12 @@ def handle_command(text):
             return
         adb_manager.open_youtube(connected_ip)
         send("▶️ YouTube opened.")
+
+    elif cmd == "/resetyt":
+        if not ensure_connected():
+            return
+        send("🔄 Restarting YouTube...")
+        adb_manager.restart_youtube(connected_ip)
 
     elif cmd == "/history":
         if not ensure_connected():

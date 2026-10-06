@@ -67,6 +67,13 @@ def is_youtube_foreground(ip):
     return False
 
 
+def restart_youtube(ip):
+    """Force-stop and relaunch YouTube to its home screen."""
+    _adb(ip, "shell", "am", "force-stop", YOUTUBE_PKG)
+    time.sleep(2)
+    _adb(ip, "shell", "am", "start", "-n", YOUTUBE_ACTIVITY)
+
+
 def open_youtube_history(ip):
     """Open YouTube and navigate to Watch History, leaving focus on the first video."""
     _adb(ip, "shell", "am", "force-stop", YOUTUBE_PKG)
