@@ -12,7 +12,7 @@ sudo raspi-config nonint do_wifi_country US
 
 # Install dependencies
 sudo apt-get update
-sudo apt-get install -y python3-pygame
+sudo apt-get install -y python3-pygame adb
 
 # Install WiFi GUI service
 sudo cp /home/admin/grandmapi/wifi/grandmapi-wifi.service /etc/systemd/system/
