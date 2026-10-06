@@ -22,16 +22,45 @@ def disconnect(ip):
     subprocess.run(["adb", "disconnect", f"{ip}:5555"], capture_output=True)
 
 
-def _compress_to_jpeg(png_bytes, save_path):
-    """Convert raw PNG bytes to JPEG. Returns JPEG path or None if Pillow unavailable."""
+def _png_to_jpeg_bytes(png_bytes, max_width, quality):
+    """Downscale + JPEG-encode raw PNG bytes. Returns JPEG bytes or None if Pillow unavailable."""
     try:
         from PIL import Image
         import io
-        jpeg_path = save_path.rsplit(".", 1)[0] + ".jpg"
-        Image.open(io.BytesIO(png_bytes)).save(jpeg_path, "JPEG", quality=75)
-        return jpeg_path
+        img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
+        if img.width > max_width:
+            h = int(img.height * max_width / img.width)
+            img = img.resize((max_width, h))
+        buf = io.BytesIO()
+        img.save(buf, "JPEG", quality=quality)
+        return buf.getvalue()
     except Exception:
         return None
+
+
+def _compress_to_jpeg(png_bytes, save_path, max_width=960, quality=70):
+    """Downscale + compress PNG bytes to a JPEG file. Returns path or None if Pillow unavailable."""
+    jpeg_bytes = _png_to_jpeg_bytes(png_bytes, max_width, quality)
+    if jpeg_bytes is None:
+        return None
+    jpeg_path = save_path.rsplit(".", 1)[0] + ".jpg"
+    with open(jpeg_path, "wb") as f:
+        f.write(jpeg_bytes)
+    return jpeg_path
+
+
+def capture_jpeg_bytes(ip, max_width=640, quality=50):
+    """Grab one frame as JPEG bytes for live streaming. Falls back to raw PNG bytes."""
+    result = subprocess.run(
+        ["adb", "-s", f"{ip}:5555", "exec-out", "screencap", "-p"],
+        capture_output=True, timeout=15
+    )
+    if result.returncode == 0 and len(result.stdout) > 1000:
+        jpeg = _png_to_jpeg_bytes(result.stdout, max_width, quality)
+        if jpeg is not None:
+            return jpeg, "image/jpeg"
+        return result.stdout, "image/png"
+    return None, None
 
 
 def screenshot(ip, save_path="/tmp/firestick_screen.png"):

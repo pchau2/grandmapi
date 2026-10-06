@@ -5,9 +5,12 @@ import json
 import os
 import sys
 import time
+import subprocess
 
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+STREAM_PORT = 8080
 
 ALERT_TEXT = (
     "🆘 *GRANDMA NEEDS HELP!*\n\n"
@@ -18,6 +21,17 @@ ALERT_TEXT = (
     "/ytlock — Lock to YouTube\n"
     "/ytunlock — Restore normal access"
 )
+
+
+def _live_link_line():
+    try:
+        r = subprocess.run(["tailscale", "ip", "-4"], capture_output=True, text=True, timeout=5)
+        ip = r.stdout.strip() if r.returncode == 0 else ""
+        if ip:
+            return f"\n\n📡 Live view: http://{ip}:{STREAM_PORT}"
+    except Exception:
+        pass
+    return ""
 
 REMOTE_KEYBOARD = json.dumps({
     "inline_keyboard": [
@@ -116,11 +130,12 @@ def send(ip=None):
                 print(f"[notify] Screenshot attempt {attempt + 1} failed: {e}")
             time.sleep(1)
 
+    alert_text = ALERT_TEXT + _live_link_line()
     try:
         if screenshot_path:
-            msg_id = _send_photo(screenshot_path, ALERT_TEXT)
+            msg_id = _send_photo(screenshot_path, alert_text)
         else:
-            msg_id = _send_message(ALERT_TEXT)
+            msg_id = _send_message(alert_text)
         if msg_id:
             try:
                 with open(ALERT_MSG_ID_PATH, "w") as f:

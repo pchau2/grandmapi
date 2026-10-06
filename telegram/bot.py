@@ -22,6 +22,8 @@ _ytlock_active = True
 _callback_lock = threading.Lock()
 _startup_msg_id = None
 _session_message_ids = []  # messages to bulk-delete when Done is pressed
+_stream_proc = None        # live-stream server subprocess, when running
+STREAM_PORT = 8080
 
 HEARTBEAT_HOUR = 9           # send daily check-in at 9 AM
 WIFI_CHECK_INTERVAL = 60     # 1 minute
@@ -78,14 +80,16 @@ KEY_MAP = {
 
 # Seconds to wait after key press before taking screenshot.
 # Transition keys (home/back) load a full new screen; nav keys update in place.
+# Nav keys (arrows) default to 0.25s for a snappy, near-live feel.
 KEY_DELAYS = {
-    "key_home":   2.0,
-    "key_back":   1.5,
-    "key_select": 1.2,
-    "key_rew":    1.2,
-    "key_fwd":    1.2,
-    "key_play":   0.6,
+    "key_home":   1.5,
+    "key_back":   1.0,
+    "key_select": 0.9,
+    "key_rew":    0.9,
+    "key_fwd":    0.9,
+    "key_play":   0.4,
 }
+NAV_DELAY = 0.25  # default for arrow keys and anything not listed above
 
 
 # ------------------------------------------------------------------ API helpers
@@ -253,7 +257,7 @@ def handle_callback(callback_query):
 
         if data in KEY_MAP:
             adb_manager.send_key(connected_ip, KEY_MAP[data])
-            time.sleep(KEY_DELAYS.get(data, 0.5))
+            time.sleep(KEY_DELAYS.get(data, NAV_DELAY))
 
         elif data == "action_youtube":
             adb_manager.open_youtube(connected_ip)
@@ -443,6 +447,14 @@ def _is_throttled_now():
         return bool(val & 0x4)  # bit 2 = currently throttled
     except Exception:
         return False
+
+
+def _tailscale_ip():
+    try:
+        r = subprocess.run(["tailscale", "ip", "-4"], capture_output=True, text=True, timeout=5)
+        return r.stdout.strip() if r.returncode == 0 else None
+    except Exception:
+        return None
 
 
 _health_state = {"temp": False, "disk": False, "throttle": False}
@@ -639,6 +651,7 @@ HELP_TEXT = (
     "/ytlock — Lock to YouTube only\n"
     "/ytunlock — Restore normal access\n"
     "/screenshot — Capture the screen\n"
+    "/live — Live screen view (browser link)\n"
     "/restarttv — Reconnect ADB to Fire Stick\n"
     "/reboot — Reboot the Fire Stick\n\n"
     "*🖥 Pi*\n"
@@ -712,6 +725,18 @@ def handle_command(text):
             send_photo(path, "Fire Stick screen")
         else:
             send("❌ Screenshot failed. The screen may be protected by DRM.")
+
+    elif cmd == "/live":
+        ts_ip = _tailscale_ip()
+        if ts_ip:
+            url = f"http://{ts_ip}:{STREAM_PORT}"
+            send(
+                f"📡 *Live Fire Stick view*\n\n"
+                f"Open in your browser (must be on Tailscale):\n{url}\n\n"
+                f"_Updates ~1–2 fps. The stream is idle until you open it._"
+            )
+        else:
+            send("❌ Tailscale IP unavailable — can't build the live view link.")
 
     elif cmd == "/youtube":
         if not ensure_connected():
