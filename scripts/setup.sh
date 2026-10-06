@@ -19,4 +19,10 @@ sudo cp /home/admin/grandmapi/wifi/grandmapi-wifi.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable grandmapi-wifi.service
 
+# Create env file for Telegram credentials if it doesn't exist
+if [ ! -f /etc/grandmapi.env ]; then
+    sudo cp /home/admin/grandmapi/telegram/grandmapi.env.template /etc/grandmapi.env
+    echo "Edit /etc/grandmapi.env and add your Telegram bot token and chat ID."
+fi
+
 echo "Setup complete. Reboot to apply all changes."
