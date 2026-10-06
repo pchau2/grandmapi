@@ -349,12 +349,7 @@ def _health_report():
     svc_block = "\n".join(lines)
 
     # Tailscale IP
-    try:
-        ts = subprocess.run(["tailscale", "ip", "-4"],
-                            capture_output=True, text=True, timeout=5)
-        ts_ip = ts.stdout.strip() if ts.returncode == 0 else "unavailable"
-    except Exception:
-        ts_ip = "unavailable"
+    ts_ip = _tailscale_ip() or "unavailable"
 
     # Disk usage
     try:
@@ -450,11 +445,26 @@ def _is_throttled_now():
 
 
 def _tailscale_ip():
+    # Try the CLI at common locations (systemd PATH may not include it)
+    for binary in ("tailscale", "/usr/bin/tailscale", "/usr/sbin/tailscale"):
+        try:
+            r = subprocess.run([binary, "ip", "-4"], capture_output=True, text=True, timeout=5)
+            ip = r.stdout.strip().split("\n")[0].strip()
+            if r.returncode == 0 and ip:
+                return ip
+        except Exception:
+            continue
+    # Fall back to reading the tailscale0 interface directly
     try:
-        r = subprocess.run(["tailscale", "ip", "-4"], capture_output=True, text=True, timeout=5)
-        return r.stdout.strip() if r.returncode == 0 else None
+        r = subprocess.run(["ip", "-4", "addr", "show", "tailscale0"],
+                           capture_output=True, text=True, timeout=5)
+        for line in r.stdout.split("\n"):
+            line = line.strip()
+            if line.startswith("inet "):
+                return line.split()[1].split("/")[0]
     except Exception:
-        return None
+        pass
+    return None
 
 
 _health_state = {"temp": False, "disk": False, "throttle": False}
