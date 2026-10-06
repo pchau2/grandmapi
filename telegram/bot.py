@@ -437,6 +437,7 @@ HELP_TEXT = (
     "/reboot — Reboot the Fire Stick\n\n"
     "*ℹ️ Info*\n"
     "/status — Connection status\n"
+    "/heartbeat — Send daily check-in now\n"
     "/help — Show this message"
 )
 
@@ -468,6 +469,25 @@ def handle_command(text):
             f"{wifi_icon} WiFi: {'Connected' if wifi else 'Disconnected'}\n"
             f"{fs_icon} Fire Stick: {fs_status}"
             f"{lock_line}"
+        )
+        pin_message(msg_id)
+
+    elif cmd == "/heartbeat":
+        wifi = _is_wifi_connected()
+        wifi_icon = "✅" if wifi else "❌"
+        fs_icon = "✅" if connected_ip else "❌"
+        fs = f"Connected to {adb_manager.get_device_name(connected_ip)} (`{connected_ip}`)" if connected_ip else "Not connected"
+        lock_line = "\n🔒 YouTube lock: *Active*" if _ytlock_active else ""
+        svc_block, ts_ip, disk, memory = _health_report()
+        msg_id = send(
+            f"💓 *grandmapi daily check-in*\n\n"
+            f"{wifi_icon} WiFi: {'Connected' if wifi else 'Disconnected'}\n"
+            f"{fs_icon} Fire Stick: {fs}"
+            f"{lock_line}\n\n"
+            f"*Services:*\n{svc_block}\n\n"
+            f"🌐 Tailscale: `{ts_ip}`\n"
+            f"💾 Disk: {disk}\n"
+            f"🧠 RAM: {memory}"
         )
         pin_message(msg_id)
 
