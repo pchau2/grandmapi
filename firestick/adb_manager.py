@@ -46,25 +46,32 @@ def screenshot(ip, save_path="/tmp/firestick_screen.png"):
     return None
 
 
+YOUTUBE_PKG = "com.amazon.firetv.youtube"
+YOUTUBE_ACTIVITY = "com.amazon.firetv.youtube/dev.cobalt.app.MainActivity"
+
+
 def open_youtube(ip):
-    # Try TV-optimized YouTube first, fall back to standard
-    ok, _, _ = _adb(ip, "shell", "monkey", "-p", "com.amazon.firetv.youtube.tv",
-                    "-c", "android.intent.category.LAUNCHER", "1")
+    ok, _, _ = _adb(ip, "shell", "am", "start", "-n", YOUTUBE_ACTIVITY)
     if not ok:
-        _adb(ip, "shell", "monkey", "-p", "com.amazon.firetv.youtube",
-             "-c", "android.intent.category.LAUNCHER", "1")
+        # Fallback: monkey launch
+        _adb(ip, "shell", "monkey", "-p", YOUTUBE_PKG, "1")
+
+
+def is_youtube_foreground(ip):
+    ok, out, _ = _adb(ip, "shell", "dumpsys", "activity", "activities", timeout=5)
+    if ok:
+        for line in out.split("\n"):
+            if "mResumedActivity" in line:
+                return YOUTUBE_PKG in line
+    return False
 
 
 def lock_to_youtube(ip):
-    # Disable Fire TV home launcher
-    _adb(ip, "shell", "pm", "disable-user", "--user", "0", "com.amazon.tv.launcher")
     open_youtube(ip)
 
 
 def unlock(ip):
-    _adb(ip, "shell", "pm", "enable", "com.amazon.tv.launcher")
-    _adb(ip, "shell", "cmd", "package", "set-home-activity",
-         "com.amazon.tv.launcher/.MainActivity")
+    pass  # keep-alive loop in bot.py handles the lock state
 
 
 def get_device_name(ip):
