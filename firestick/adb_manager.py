@@ -22,17 +22,27 @@ def disconnect(ip):
 
 
 def screenshot(ip, save_path="/tmp/firestick_screen.png"):
-    ok, _, _ = _adb(ip, "exec-out", "screencap", "-p",
-                    timeout=15)
-    # exec-out with screencap needs binary output
+    # Save to sdcard first then pull — more reliable than exec-out on Fire TV
+    ok, _, _ = _adb(ip, "shell", "screencap", "-p", "/sdcard/screen.png", timeout=15)
+    if ok:
+        result = subprocess.run(
+            ["adb", "-s", f"{ip}:5555", "pull", "/sdcard/screen.png", save_path],
+            capture_output=True, text=True, timeout=15
+        )
+        if result.returncode == 0:
+            _adb(ip, "shell", "rm", "/sdcard/screen.png")
+            return save_path
+
+    # Fall back to exec-out
     result = subprocess.run(
         ["adb", "-s", f"{ip}:5555", "exec-out", "screencap", "-p"],
         capture_output=True, timeout=15
     )
-    if result.returncode == 0 and result.stdout:
+    if result.returncode == 0 and len(result.stdout) > 1000:
         with open(save_path, "wb") as f:
             f.write(result.stdout)
         return save_path
+
     return None
 
 
