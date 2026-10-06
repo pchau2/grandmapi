@@ -68,30 +68,24 @@ def is_youtube_foreground(ip):
 
 
 def open_youtube_history(ip):
-    """Open YouTube and navigate to Watch History to play the most recent video."""
-    # Force stop ensures a clean launch with focus in a known state
+    """Open YouTube and navigate to Watch History, leaving focus on the first video."""
     _adb(ip, "shell", "am", "force-stop", YOUTUBE_PKG)
     time.sleep(2)
     _adb(ip, "shell", "am", "start", "-n", YOUTUBE_ACTIVITY)
-    time.sleep(5)
+    time.sleep(8)  # Cobalt load time varies — 8s is reliable on slow starts
 
-    # Open sidebar — Home is focused at the top
-    send_key(ip, KEY_LEFT)
-    time.sleep(0.5)
+    send_key(ip, KEY_LEFT)   # open sidebar
+    time.sleep(1.0)
 
-    # Navigate down: Home → Shorts → Subscriptions → Library
+    # Home → Shorts → Subscriptions → Library
     for _ in range(3):
         send_key(ip, KEY_DOWN)
-        time.sleep(0.3)
+        time.sleep(0.5)
 
-    # Select Library — History view opens directly
-    send_key(ip, KEY_SELECT)
-    time.sleep(2.5)
+    send_key(ip, KEY_SELECT)  # open Library / History
+    time.sleep(3.5)
 
-    # Move down once to focus the first history video, then play
-    send_key(ip, KEY_DOWN)
-    time.sleep(0.3)
-    send_key(ip, KEY_SELECT)
+    send_key(ip, KEY_DOWN)    # focus first history video (grandma presses OK to play)
 
 
 def lock_to_youtube(ip):
