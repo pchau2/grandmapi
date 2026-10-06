@@ -94,7 +94,7 @@ def open_youtube_history(ip):
     _adb(ip, "shell", "am", "force-stop", YOUTUBE_PKG)
     time.sleep(2)
     _adb(ip, "shell", "am", "start", "-n", YOUTUBE_ACTIVITY)
-    _wait_for_youtube(ip, timeout=10, settle=1.0)  # extra settle for UI to render
+    _wait_for_youtube(ip, timeout=10, settle=2.5)  # activity resumes before UI renders
 
     send_key(ip, KEY_LEFT)   # open sidebar
     time.sleep(1.0)

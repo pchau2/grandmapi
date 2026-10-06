@@ -138,6 +138,23 @@ def _clear_alert_msg_id():
         pass
 
 
+def _alert_caption(status=None):
+    """Build alert caption, optionally with a status line under the header."""
+    if status:
+        return notify.ALERT_TEXT.replace(
+            "🆘 *GRANDMA NEEDS HELP!*",
+            f"🆘 *GRANDMA NEEDS HELP!*\n{status}"
+        )
+    return notify.ALERT_TEXT
+
+
+def _update_alert_caption(message_id, caption):
+    """Edit just the caption of the alert photo message."""
+    if message_id:
+        _api_post("editMessageCaption", chat_id=CHAT_ID, message_id=message_id,
+                  caption=caption, parse_mode="Markdown", reply_markup=REMOTE_KEYBOARD)
+
+
 def answer_callback(callback_query_id, text=""):
     _api_post("answerCallbackQuery", callback_query_id=callback_query_id, text=text)
 
@@ -563,55 +580,76 @@ def handle_command(text):
     elif cmd == "/youtube":
         if not ensure_connected():
             return
+        alert_id = _read_alert_msg_id()
         adb_manager.open_youtube(connected_ip)
-        send("▶️ YouTube opened.")
+        if alert_id:
+            _update_alert_caption(alert_id, _alert_caption("▶️ YouTube opened"))
+        else:
+            send("▶️ YouTube opened.")
 
     elif cmd == "/resetyt":
         if not ensure_connected():
             return
-        mid = send("🔄 Restarting YouTube...")
-        _session_message_ids.append(mid)
+        alert_id = _read_alert_msg_id()
+        if alert_id:
+            _update_alert_caption(alert_id, _alert_caption("⏳ Restarting YouTube..."))
+        else:
+            mid = send("🔄 Restarting YouTube...")
+            _session_message_ids.append(mid)
         adb_manager.restart_youtube(connected_ip)
         path = adb_manager.screenshot(connected_ip)
-        if path:
-            alert_id = _read_alert_msg_id()
-            if alert_id:
-                caption = notify.ALERT_TEXT.replace(
-                    "🆘 *GRANDMA NEEDS HELP!*",
-                    "🆘 *GRANDMA NEEDS HELP!*\n▶️ YouTube restarted"
-                )
-                edit_photo_message(alert_id, path, caption)
+        if alert_id:
+            if path:
+                edit_photo_message(alert_id, path, _alert_caption("▶️ YouTube restarted"))
             else:
-                mid = send_photo(path, "▶️ YouTube restarted\n\n" + notify.ALERT_TEXT.split("\n\n", 1)[1],
-                                 reply_markup=REMOTE_KEYBOARD)
-                if mid:
-                    _session_message_ids.append(mid)
+                _update_alert_caption(alert_id, _alert_caption("▶️ YouTube restarted"))
+        elif path:
+            mid = send_photo(path, _alert_caption("▶️ YouTube restarted"), reply_markup=REMOTE_KEYBOARD)
+            if mid:
+                _session_message_ids.append(mid)
 
     elif cmd == "/history":
         if not ensure_connected():
             return
-        mid = send("📺 Opening YouTube history...")
-        _session_message_ids.append(mid)
+        alert_id = _read_alert_msg_id()
+        if alert_id:
+            _update_alert_caption(alert_id, _alert_caption("⏳ Opening YouTube history..."))
+        else:
+            mid = send("📺 Opening YouTube history...")
+            _session_message_ids.append(mid)
         adb_manager.open_youtube_history(connected_ip)
         path = adb_manager.screenshot(connected_ip)
-        if path:
-            mid = send_photo(path, "📺 YouTube history — press OK on remote to play", reply_markup=REMOTE_KEYBOARD)
+        if alert_id:
+            if path:
+                edit_photo_message(alert_id, path, _alert_caption("📺 History ready — press OK to play"))
+            else:
+                _update_alert_caption(alert_id, _alert_caption("📺 History ready — press OK to play"))
+        elif path:
+            mid = send_photo(path, "📺 History ready — press OK to play", reply_markup=REMOTE_KEYBOARD)
             if mid:
                 _session_message_ids.append(mid)
 
     elif cmd == "/ytlock":
         if not ensure_connected():
             return
+        alert_id = _read_alert_msg_id()
         _ytlock_active = True
         adb_manager.lock_to_youtube(connected_ip)
-        send("🔒 Fire Stick locked to YouTube. It will relaunch automatically if closed.")
+        if alert_id:
+            _update_alert_caption(alert_id, _alert_caption("🔒 YouTube locked"))
+        else:
+            send("🔒 Fire Stick locked to YouTube. It will relaunch automatically if closed.")
 
     elif cmd == "/ytunlock":
         if not ensure_connected():
             return
+        alert_id = _read_alert_msg_id()
         _ytlock_active = False
         adb_manager.unlock(connected_ip)
-        send("🔓 Fire Stick unlocked — normal access restored.")
+        if alert_id:
+            _update_alert_caption(alert_id, _alert_caption("🔓 YouTube unlocked"))
+        else:
+            send("🔓 Fire Stick unlocked — normal access restored.")
 
     elif cmd == "/reboot":
         if not ensure_connected():
