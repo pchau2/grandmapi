@@ -1,0 +1,15 @@
+[Unit]
+Description=grandmapi Fire Stick Button Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=admin
+EnvironmentFile=/etc/grandmapi.env
+WorkingDirectory=/home/admin/grandmapi
+ExecStart=/usr/bin/python3 /home/admin/grandmapi/firestick/button_monitor.py
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

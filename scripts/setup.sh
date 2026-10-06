@@ -18,9 +18,11 @@ sudo apt-get install -y python3-pygame adb
 sudo cp /home/admin/grandmapi/wifi/grandmapi-wifi.service /etc/systemd/system/
 # Install Telegram bot service
 sudo cp /home/admin/grandmapi/telegram/grandmapi-telegram.service /etc/systemd/system/
+sudo cp /home/admin/grandmapi/firestick/grandmapi-monitor.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable grandmapi-wifi.service
 sudo systemctl enable grandmapi-telegram.service
+sudo systemctl enable grandmapi-monitor.service
 
 # Create env file for Telegram credentials if it doesn't exist
 if [ ! -f /etc/grandmapi.env ]; then
