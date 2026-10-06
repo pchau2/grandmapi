@@ -47,6 +47,14 @@ REMOTE_KEYBOARD = json.dumps({
             {"text": "🔊+", "callback_data": "key_vol_up"},
             {"text": "🔊–", "callback_data": "key_vol_down"}
         ],
+        [
+            {"text": "▶️ YouTube", "callback_data": "action_youtube"},
+            {"text": "📺 History", "callback_data": "action_history"}
+        ],
+        [
+            {"text": "🔒 YT Lock", "callback_data": "action_ytlock"},
+            {"text": "🔓 YT Unlock", "callback_data": "action_ytunlock"}
+        ],
         [{"text": "📸 Refresh screenshot", "callback_data": "refresh"}],
         [{"text": "✅ Done — grandma is all set", "callback_data": "done"}]
     ]
@@ -147,6 +155,7 @@ def edit_photo_message(message_id, photo_path, caption):
 
 
 def handle_callback(callback_query):
+    global _ytlock_active
     query_id = callback_query["id"]
     data = callback_query.get("data", "")
     message = callback_query.get("message", {})
@@ -167,7 +176,7 @@ def handle_callback(callback_query):
 
     # Reject if already processing a button press
     if not _callback_lock.acquire(blocking=False):
-        answer_callback(query_id, "⏳ Still processing last press, please wait...")
+        answer_callback(query_id, "⏳ Still processing, please wait...")
         return
 
     try:
@@ -175,9 +184,25 @@ def handle_callback(callback_query):
 
         if data in KEY_MAP:
             adb_manager.send_key(connected_ip, KEY_MAP[data])
-            time.sleep(0.8)
+            time.sleep(0.5)
 
-        # Take a fresh screenshot and update the message
+        elif data == "action_youtube":
+            adb_manager.open_youtube(connected_ip)
+            time.sleep(3)
+
+        elif data == "action_history":
+            adb_manager.open_youtube_history(connected_ip)
+
+        elif data == "action_ytlock":
+            _ytlock_active = True
+            adb_manager.lock_to_youtube(connected_ip)
+            time.sleep(3)
+
+        elif data == "action_ytunlock":
+            _ytlock_active = False
+            time.sleep(1)
+
+        # Take a fresh screenshot and update the message in-place
         path = adb_manager.screenshot(connected_ip)
         if path and message_id:
             if is_photo:

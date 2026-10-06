@@ -23,7 +23,17 @@ def disconnect(ip):
 
 
 def screenshot(ip, save_path="/tmp/firestick_screen.png"):
-    # Save to sdcard first then pull — more reliable than exec-out on Fire TV
+    # exec-out pipes screenshot directly — one round trip vs save/pull/delete
+    result = subprocess.run(
+        ["adb", "-s", f"{ip}:5555", "exec-out", "screencap", "-p"],
+        capture_output=True, timeout=15
+    )
+    if result.returncode == 0 and len(result.stdout) > 1000:
+        with open(save_path, "wb") as f:
+            f.write(result.stdout)
+        return save_path
+
+    # Fall back to sdcard pull if exec-out fails
     ok, _, _ = _adb(ip, "shell", "screencap", "-p", "/sdcard/screen.png", timeout=15)
     if ok:
         result = subprocess.run(
@@ -33,16 +43,6 @@ def screenshot(ip, save_path="/tmp/firestick_screen.png"):
         if result.returncode == 0:
             _adb(ip, "shell", "rm", "/sdcard/screen.png")
             return save_path
-
-    # Fall back to exec-out
-    result = subprocess.run(
-        ["adb", "-s", f"{ip}:5555", "exec-out", "screencap", "-p"],
-        capture_output=True, timeout=15
-    )
-    if result.returncode == 0 and len(result.stdout) > 1000:
-        with open(save_path, "wb") as f:
-            f.write(result.stdout)
-        return save_path
 
     return None
 
@@ -69,16 +69,20 @@ def is_youtube_foreground(ip):
 
 def open_youtube_history(ip):
     """Open YouTube directly to watch history and play the most recent video."""
-    # Cobalt reads the navigation URL from the 'url' string extra, not -d flag.
-    # FEhistory is the YouTube TV leanback browse ID for Watch History.
+    # Force stop first — if YouTube is already running, am start ignores the URL
+    # and just resumes the existing session instead of navigating to history.
+    _adb(ip, "shell", "am", "force-stop", YOUTUBE_PKG)
+    time.sleep(2)
+
+    # Launch fresh with the history browse URL via Cobalt's url extra
     _adb(ip, "shell", "am", "start",
          "-n", YOUTUBE_ACTIVITY,
          "--es", "url", "https://www.youtube.com/tv#/browse?id=FEhistory")
 
-    # Wait for the history page to load
-    time.sleep(5)
+    # Wait for fresh app launch + history page to load
+    time.sleep(6)
 
-    # First video in history is usually focused at the top — press SELECT to play
+    # First video in history should be focused — select to play
     send_key(ip, KEY_DOWN)
     time.sleep(0.3)
     send_key(ip, KEY_SELECT)

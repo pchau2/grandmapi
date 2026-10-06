@@ -8,14 +8,7 @@ import sys
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
-ALERT_TEXT = (
-    "🆘 *GRANDMA NEEDS HELP!*\n\n"
-    "*Quick actions:*\n"
-    "/history — Resume most recent video\n"
-    "/youtube — Open YouTube\n"
-    "/ytlock — Lock to YouTube\n"
-    "/ytunlock — Restore normal access"
-)
+ALERT_TEXT = "🆘 *GRANDMA NEEDS HELP!*"
 
 REMOTE_KEYBOARD = json.dumps({
     "inline_keyboard": [
@@ -38,6 +31,14 @@ REMOTE_KEYBOARD = json.dumps({
         [
             {"text": "🔊+", "callback_data": "key_vol_up"},
             {"text": "🔊–", "callback_data": "key_vol_down"}
+        ],
+        [
+            {"text": "▶️ YouTube", "callback_data": "action_youtube"},
+            {"text": "📺 History", "callback_data": "action_history"}
+        ],
+        [
+            {"text": "🔒 YT Lock", "callback_data": "action_ytlock"},
+            {"text": "🔓 YT Unlock", "callback_data": "action_ytunlock"}
         ],
         [{"text": "📸 Refresh screenshot", "callback_data": "refresh"}],
         [{"text": "✅ Done — grandma is all set", "callback_data": "done"}]
