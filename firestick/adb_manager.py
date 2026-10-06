@@ -68,21 +68,27 @@ def is_youtube_foreground(ip):
 
 
 def open_youtube_history(ip):
-    """Open YouTube directly to watch history and play the most recent video."""
-    # Force stop first — if YouTube is already running, am start ignores the URL
-    # and just resumes the existing session instead of navigating to history.
+    """Open YouTube and navigate to Watch History to play the most recent video."""
+    # Force stop ensures a clean launch with focus in a known state
     _adb(ip, "shell", "am", "force-stop", YOUTUBE_PKG)
     time.sleep(2)
+    _adb(ip, "shell", "am", "start", "-n", YOUTUBE_ACTIVITY)
+    time.sleep(5)
 
-    # Launch fresh with the history browse URL via Cobalt's url extra
-    _adb(ip, "shell", "am", "start",
-         "-n", YOUTUBE_ACTIVITY,
-         "--es", "url", "https://www.youtube.com/tv#/browse?id=FEhistory")
+    # Open sidebar — Home is focused at the top
+    send_key(ip, KEY_LEFT)
+    time.sleep(0.5)
 
-    # Wait for fresh app launch + history page to load
-    time.sleep(6)
+    # Navigate down: Home → Shorts → Subscriptions → Library
+    for _ in range(3):
+        send_key(ip, KEY_DOWN)
+        time.sleep(0.3)
 
-    # First video in history should be focused — select to play
+    # Select Library — History view opens directly
+    send_key(ip, KEY_SELECT)
+    time.sleep(2.5)
+
+    # Move down once to focus the first history video, then play
     send_key(ip, KEY_DOWN)
     time.sleep(0.3)
     send_key(ip, KEY_SELECT)

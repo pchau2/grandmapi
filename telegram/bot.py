@@ -47,14 +47,6 @@ REMOTE_KEYBOARD = json.dumps({
             {"text": "🔊+", "callback_data": "key_vol_up"},
             {"text": "🔊–", "callback_data": "key_vol_down"}
         ],
-        [
-            {"text": "▶️ YouTube", "callback_data": "action_youtube"},
-            {"text": "📺 History", "callback_data": "action_history"}
-        ],
-        [
-            {"text": "🔒 YT Lock", "callback_data": "action_ytlock"},
-            {"text": "🔓 YT Unlock", "callback_data": "action_ytunlock"}
-        ],
         [{"text": "📸 Refresh screenshot", "callback_data": "refresh"}],
         [{"text": "✅ Done — grandma is all set", "callback_data": "done"}]
     ]
@@ -73,6 +65,17 @@ KEY_MAP = {
     "key_vol_down": adb_manager.KEY_VOLUME_DOWN,
     "key_rew":     89,   # KEYCODE_MEDIA_REWIND
     "key_fwd":     90,   # KEYCODE_MEDIA_FAST_FORWARD
+}
+
+# Seconds to wait after key press before taking screenshot.
+# Transition keys (home/back) load a full new screen; nav keys update in place.
+KEY_DELAYS = {
+    "key_home":   2.0,
+    "key_back":   1.5,
+    "key_select": 1.2,
+    "key_rew":    1.2,
+    "key_fwd":    1.2,
+    "key_play":   0.6,
 }
 
 
@@ -184,7 +187,7 @@ def handle_callback(callback_query):
 
         if data in KEY_MAP:
             adb_manager.send_key(connected_ip, KEY_MAP[data])
-            time.sleep(0.5)
+            time.sleep(KEY_DELAYS.get(data, 0.5))
 
         elif data == "action_youtube":
             adb_manager.open_youtube(connected_ip)
