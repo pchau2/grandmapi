@@ -337,7 +337,8 @@ def _health_report():
     services = [
         ("grandmapi-telegram", "Bot"),
         ("grandmapi-monitor", "Fire Stick monitor"),
-        ("grandmapi-wifi", "WiFi GUI"),
+        ("grandmapi-stream", "Live stream"),
+        ("NetworkManager", "WiFi"),
         ("tailscaled", "Tailscale"),
         ("ssh", "SSH"),
     ]
