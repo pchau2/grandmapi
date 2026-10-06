@@ -19,6 +19,7 @@ connected_ip = None
 _wifi_was_connected = True
 _ytlock_active = True
 _callback_lock = threading.Lock()
+_startup_msg_id = None
 
 HEARTBEAT_HOUR = 9           # send daily check-in at 9 AM
 WIFI_CHECK_INTERVAL = 60     # 1 minute
@@ -112,6 +113,12 @@ def pin_message(message_id):
     if message_id:
         _api_post("pinChatMessage", chat_id=CHAT_ID, message_id=message_id,
                   disable_notification=True)
+
+
+def edit_message(message_id, text):
+    if message_id:
+        _api_post("editMessageText", chat_id=CHAT_ID, message_id=message_id,
+                  text=text, parse_mode="Markdown")
 
 
 def answer_callback(callback_query_id, text=""):
@@ -349,7 +356,7 @@ def _wifi_monitor_loop():
 
 
 def _firestick_monitor_loop():
-    global connected_ip
+    global connected_ip, _startup_msg_id
     was_connected = False
 
     while True:
@@ -372,12 +379,22 @@ def _firestick_monitor_loop():
                     name = adb_manager.get_device_name(ip)
                     adb_manager.disable_voice(ip)
                     adb_manager.lock_to_youtube(ip)
-                    if was_connected:
-                        send(f"✅ *Fire Stick reconnected*\n\n*{name}* (`{ip}`)")
                     print(f"[monitor] Fire Stick {ip} connected.")
+                    if _startup_msg_id:
+                        wifi = _is_wifi_connected()
+                        edit_message(
+                            _startup_msg_id,
+                            f"✅ *grandmapi is online* 🏠\n\n"
+                            f"{'✅' if wifi else '❌'} WiFi: {'Connected' if wifi else 'Disconnected'}\n"
+                            f"✅ Fire Stick: {name} (`{ip}`)\n\n"
+                            f"Type /help for available commands."
+                        )
+                        _startup_msg_id = None
+                    elif was_connected:
+                        send(f"✅ *Fire Stick reconnected*\n\n*{name}* (`{ip}`)")
                     was_connected = False
                     break
-        time.sleep(FS_CHECK_INTERVAL)
+        time.sleep(30 if not connected_ip else FS_CHECK_INTERVAL)
 
 
 def _ytlock_monitor_loop():
@@ -548,7 +565,7 @@ def run():
         print("Error: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID not set in /etc/grandmapi.env")
         sys.exit(1)
 
-    global connected_ip
+    global connected_ip, _startup_msg_id
     print("grandmapi bot started.")
     wifi = _is_wifi_connected()
 
@@ -562,9 +579,11 @@ def run():
             print(f"[startup] Connected to Fire Stick at {ip}")
             break
 
-    fs_icon = "✅" if connected_ip else "❌"
-    fs_name = adb_manager.get_device_name(connected_ip) if connected_ip else "Not found"
-    fs_line = f"{fs_icon} Fire Stick: {fs_name} (`{connected_ip}`)" if connected_ip else f"{fs_icon} Fire Stick: Not found"
+    if connected_ip:
+        fs_name = adb_manager.get_device_name(connected_ip)
+        fs_line = f"✅ Fire Stick: {fs_name} (`{connected_ip}`)"
+    else:
+        fs_line = "🔄 Fire Stick: Scanning..."
 
     msg_id = send(
         f"✅ *grandmapi is online* 🏠\n\n"
@@ -573,6 +592,8 @@ def run():
         f"Type /help for available commands."
     )
     pin_message(msg_id)
+    if not connected_ip:
+        _startup_msg_id = msg_id
 
     start_monitors()
 
