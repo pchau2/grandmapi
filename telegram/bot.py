@@ -47,7 +47,8 @@ REMOTE_KEYBOARD = json.dumps({
             {"text": "🔊+", "callback_data": "key_vol_up"},
             {"text": "🔊–", "callback_data": "key_vol_down"}
         ],
-        [{"text": "📸 Refresh screenshot", "callback_data": "refresh"}]
+        [{"text": "📸 Refresh screenshot", "callback_data": "refresh"}],
+        [{"text": "✅ Done — grandma is all set", "callback_data": "done"}]
     ]
 })
 
@@ -155,6 +156,13 @@ def handle_callback(callback_query):
 
     if not connected_ip:
         answer_callback(query_id, "⚠️ Fire Stick not connected")
+        return
+
+    # Done button — delete the alert message immediately, no lock needed
+    if data == "done":
+        answer_callback(query_id, "👍 Marked as resolved")
+        if message_id:
+            _api_post("deleteMessage", chat_id=CHAT_ID, message_id=message_id)
         return
 
     # Reject if already processing a button press

@@ -39,7 +39,8 @@ REMOTE_KEYBOARD = json.dumps({
             {"text": "🔊+", "callback_data": "key_vol_up"},
             {"text": "🔊–", "callback_data": "key_vol_down"}
         ],
-        [{"text": "📸 Refresh screenshot", "callback_data": "refresh"}]
+        [{"text": "📸 Refresh screenshot", "callback_data": "refresh"}],
+        [{"text": "✅ Done — grandma is all set", "callback_data": "done"}]
     ]
 })
 
