@@ -1,0 +1,15 @@
+[Unit]
+Description=grandmapi Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=admin
+EnvironmentFile=/etc/grandmapi.env
+WorkingDirectory=/home/admin/grandmapi
+ExecStart=/usr/bin/python3 /home/admin/grandmapi/telegram/bot.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
