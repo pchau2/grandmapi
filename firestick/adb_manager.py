@@ -37,30 +37,24 @@ def screenshot(ip, save_path="/tmp/firestick_screen.png"):
 
 
 def open_youtube(ip):
-    ok, _, _ = _adb(ip, "shell", "am", "start",
-                    "-a", "android.intent.action.VIEW",
-                    "-d", "https://www.youtube.com",
-                    "-n", "com.amazon.firetv.youtube/com.amazon.firetv.youtube.app.YouTubeActivity")
+    # Try TV-optimized YouTube first, fall back to standard
+    ok, _, _ = _adb(ip, "shell", "monkey", "-p", "com.amazon.firetv.youtube.tv",
+                    "-c", "android.intent.category.LAUNCHER", "1")
     if not ok:
-        # Fallback: launch via package
-        _adb(ip, "shell", "monkey", "-p", "com.amazon.firetv.youtube", "-c",
-             "android.intent.category.LAUNCHER", "1")
+        _adb(ip, "shell", "monkey", "-p", "com.amazon.firetv.youtube",
+             "-c", "android.intent.category.LAUNCHER", "1")
 
 
 def lock_to_youtube(ip):
     # Disable Fire TV home launcher
-    _adb(ip, "shell", "pm", "disable-user", "--user", "0",
-         "com.amazon.firetv.fireflyui")
-    # Set YouTube as default home
-    _adb(ip, "shell", "cmd", "package", "set-home-activity",
-         "com.amazon.firetv.youtube/com.amazon.firetv.youtube.app.YouTubeActivity")
+    _adb(ip, "shell", "pm", "disable-user", "--user", "0", "com.amazon.tv.launcher")
     open_youtube(ip)
 
 
 def unlock(ip):
-    _adb(ip, "shell", "pm", "enable", "com.amazon.firetv.fireflyui")
+    _adb(ip, "shell", "pm", "enable", "com.amazon.tv.launcher")
     _adb(ip, "shell", "cmd", "package", "set-home-activity",
-         "com.amazon.firetv.fireflyui/.ui.HomeActivity")
+         "com.amazon.tv.launcher/.MainActivity")
 
 
 def get_device_name(ip):
