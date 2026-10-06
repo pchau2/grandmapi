@@ -18,6 +18,7 @@ CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 connected_ip = None
 _wifi_was_connected = True
 _ytlock_active = True
+_callback_lock = threading.Lock()
 
 HEARTBEAT_HOUR = 9           # send daily check-in at 9 AM
 WIFI_CHECK_INTERVAL = 60     # 1 minute
@@ -156,20 +157,27 @@ def handle_callback(callback_query):
         answer_callback(query_id, "⚠️ Fire Stick not connected")
         return
 
-    answer_callback(query_id)
+    # Reject if already processing a button press
+    if not _callback_lock.acquire(blocking=False):
+        answer_callback(query_id, "⏳ Still processing last press, please wait...")
+        return
 
-    if data in KEY_MAP:
-        adb_manager.send_key(connected_ip, KEY_MAP[data])
-        time.sleep(0.8)
+    try:
+        answer_callback(query_id)
 
-    # Take a fresh screenshot and update the message
-    path = adb_manager.screenshot(connected_ip)
-    if path and message_id:
-        if is_photo:
-            edit_photo_message(message_id, path, caption)
-        else:
-            # Original was text — upgrade to photo by sending new message
-            send_photo(path, caption)
+        if data in KEY_MAP:
+            adb_manager.send_key(connected_ip, KEY_MAP[data])
+            time.sleep(0.8)
+
+        # Take a fresh screenshot and update the message
+        path = adb_manager.screenshot(connected_ip)
+        if path and message_id:
+            if is_photo:
+                edit_photo_message(message_id, path, caption)
+            else:
+                send_photo(path, caption)
+    finally:
+        _callback_lock.release()
 
 
 def send_photo(path, caption=""):
@@ -484,11 +492,28 @@ def run():
         print("Error: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID not set in /etc/grandmapi.env")
         sys.exit(1)
 
+    global connected_ip
     print("grandmapi bot started.")
     wifi = _is_wifi_connected()
+
+    # Try to connect to Fire Stick before sending startup message
+    devices = discovery.scan()
+    for ip in devices:
+        if adb_manager.connect(ip):
+            connected_ip = ip
+            adb_manager.disable_voice(ip)
+            adb_manager.lock_to_youtube(ip)
+            print(f"[startup] Connected to Fire Stick at {ip}")
+            break
+
+    fs_icon = "✅" if connected_ip else "❌"
+    fs_name = adb_manager.get_device_name(connected_ip) if connected_ip else "Not found"
+    fs_line = f"{fs_icon} Fire Stick: {fs_name} (`{connected_ip}`)" if connected_ip else f"{fs_icon} Fire Stick: Not found"
+
     msg_id = send(
         f"✅ *grandmapi is online* 🏠\n\n"
-        f"{'✅' if wifi else '❌'} WiFi: {'Connected' if wifi else 'Disconnected'}\n\n"
+        f"{'✅' if wifi else '❌'} WiFi: {'Connected' if wifi else 'Disconnected'}\n"
+        f"{fs_line}\n\n"
         f"Type /help for available commands."
     )
     pin_message(msg_id)

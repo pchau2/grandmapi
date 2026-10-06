@@ -68,21 +68,19 @@ def is_youtube_foreground(ip):
 
 
 def open_youtube_history(ip):
-    """Open YouTube history page and play the most recent video."""
-    # Launch YouTube with the history deep link
-    ok, _, _ = _adb(ip, "shell", "am", "start", "-n", YOUTUBE_ACTIVITY,
-                    "-d", "https://www.youtube.com/feed/history")
-    if not ok:
-        open_youtube(ip)
-        time.sleep(4)
-    else:
-        # Wait for the history page to load
-        time.sleep(4)
+    """Open YouTube directly to watch history and play the most recent video."""
+    # Cobalt reads the navigation URL from the 'url' string extra, not -d flag.
+    # FEhistory is the YouTube TV leanback browse ID for Watch History.
+    _adb(ip, "shell", "am", "start",
+         "-n", YOUTUBE_ACTIVITY,
+         "--es", "url", "https://www.youtube.com/tv#/browse?id=FEhistory")
 
-    # The first video in history is typically focused — press SELECT to play it.
-    # Send DOWN once first in case the page header is focused, then SELECT.
+    # Wait for the history page to load
+    time.sleep(5)
+
+    # First video in history is usually focused at the top — press SELECT to play
     send_key(ip, KEY_DOWN)
-    time.sleep(0.5)
+    time.sleep(0.3)
     send_key(ip, KEY_SELECT)
 
 
