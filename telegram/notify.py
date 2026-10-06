@@ -11,7 +11,8 @@ CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 ALERT_TEXT = (
     "🆘 *GRANDMA NEEDS HELP!*\n\n"
     "*Quick actions:*\n"
-    "/history — Resume most recent video\n"
+    "/resetyt — Restart YouTube to home screen\n"
+    "/history — Open YouTube history\n"
     "/youtube — Open YouTube\n"
     "/ytlock — Lock to YouTube\n"
     "/ytunlock — Restore normal access"

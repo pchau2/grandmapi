@@ -120,18 +120,12 @@ if __name__ == "__main__":
 
     try:
         from telegram.notify import send
-        from firestick import adb_manager
     except Exception as e:
-        _log(f"[button_monitor] FATAL: could not import modules: {e}")
+        _log(f"[button_monitor] FATAL: could not import telegram.notify: {e}")
         sys.exit(1)
 
     def on_help():
-        _log("[button_monitor] Mic button pressed — restarting YouTube and sending help alert!")
-        try:
-            if connected_ip:
-                adb_manager.restart_youtube(connected_ip)
-        except Exception as e:
-            _log(f"[button_monitor] Error restarting YouTube: {e}")
+        _log("[button_monitor] Mic button pressed — sending help alert!")
         try:
             send(connected_ip)
         except Exception as e:
