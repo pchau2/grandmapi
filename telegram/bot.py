@@ -224,22 +224,31 @@ def handle_callback(callback_query):
         _callback_lock.release()
 
 
-def send_photo(path, caption=""):
+def send_photo(path, caption="", reply_markup=None):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
     boundary = "grandmapiboundary"
     with open(path, "rb") as f:
         photo_data = f.read()
-    body = (
+    parts = (
         f"--{boundary}\r\n"
         f'Content-Disposition: form-data; name="chat_id"\r\n\r\n'
         f"{CHAT_ID}\r\n"
         f"--{boundary}\r\n"
         f'Content-Disposition: form-data; name="caption"\r\n\r\n'
         f"{caption}\r\n"
+    )
+    if reply_markup:
+        parts += (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="reply_markup"\r\n\r\n'
+            f"{reply_markup}\r\n"
+        )
+    parts += (
         f"--{boundary}\r\n"
         f'Content-Disposition: form-data; name="photo"; filename="screen.png"\r\n'
         f"Content-Type: image/png\r\n\r\n"
-    ).encode() + photo_data + f"\r\n--{boundary}--\r\n".encode()
+    )
+    body = parts.encode() + photo_data + f"\r\n--{boundary}--\r\n".encode()
     req = urllib.request.Request(url, data=body)
     req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
     try:
@@ -452,7 +461,7 @@ HELP_TEXT = (
     "*📺 Fire Stick*\n"
     "/youtube — Open YouTube\n"
     "/resetyt — Force-restart YouTube to home screen\n"
-    "/history — Open YouTube history\n"
+    "/history — Open YouTube watch history\n"
     "/ytlock — Lock to YouTube only\n"
     "/ytunlock — Restore normal access\n"
     "/screenshot — Capture the screen\n"
@@ -540,12 +549,19 @@ def handle_command(text):
             return
         send("🔄 Restarting YouTube...")
         adb_manager.restart_youtube(connected_ip)
+        time.sleep(3)
+        path = adb_manager.screenshot(connected_ip)
+        if path:
+            send_photo(path, "▶️ YouTube restarted", reply_markup=REMOTE_KEYBOARD)
 
     elif cmd == "/history":
         if not ensure_connected():
             return
         send("📺 Opening YouTube history...")
         adb_manager.open_youtube_history(connected_ip)
+        path = adb_manager.screenshot(connected_ip)
+        if path:
+            send_photo(path, "📺 YouTube history — press OK on remote to play", reply_markup=REMOTE_KEYBOARD)
 
     elif cmd == "/ytlock":
         if not ensure_connected():
