@@ -123,6 +123,21 @@ def edit_message(message_id, text):
                   text=text, parse_mode="Markdown")
 
 
+def _read_alert_msg_id():
+    try:
+        with open("/tmp/grandmapi_alert_msg_id") as f:
+            return int(f.read().strip())
+    except Exception:
+        return None
+
+
+def _clear_alert_msg_id():
+    try:
+        os.remove("/tmp/grandmapi_alert_msg_id")
+    except Exception:
+        pass
+
+
 def answer_callback(callback_query_id, text=""):
     _api_post("answerCallbackQuery", callback_query_id=callback_query_id, text=text)
 
@@ -182,6 +197,7 @@ def handle_callback(callback_query):
     # Done button — delete this message and all tracked session messages
     if data == "done":
         answer_callback(query_id, "👍 Marked as resolved")
+        _clear_alert_msg_id()
         to_delete = list(_session_message_ids)
         _session_message_ids.clear()
         if message_id:
@@ -556,12 +572,15 @@ def handle_command(text):
         mid = send("🔄 Restarting YouTube...")
         _session_message_ids.append(mid)
         adb_manager.restart_youtube(connected_ip)
-        time.sleep(3)
         path = adb_manager.screenshot(connected_ip)
         if path:
-            mid = send_photo(path, "▶️ YouTube restarted", reply_markup=REMOTE_KEYBOARD)
-            if mid:
-                _session_message_ids.append(mid)
+            alert_id = _read_alert_msg_id()
+            if alert_id:
+                edit_photo_message(alert_id, path, "▶️ YouTube restarted")
+            else:
+                mid = send_photo(path, "▶️ YouTube restarted", reply_markup=REMOTE_KEYBOARD)
+                if mid:
+                    _session_message_ids.append(mid)
 
     elif cmd == "/history":
         if not ensure_connected():

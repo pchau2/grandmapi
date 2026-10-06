@@ -105,9 +105,15 @@ def send(ip=None):
 
     try:
         if screenshot_path:
-            _send_photo(screenshot_path, ALERT_TEXT)
+            msg_id = _send_photo(screenshot_path, ALERT_TEXT)
         else:
-            _send_message(ALERT_TEXT)
+            msg_id = _send_message(ALERT_TEXT)
+        if msg_id:
+            try:
+                with open("/tmp/grandmapi_alert_msg_id", "w") as f:
+                    f.write(str(msg_id))
+            except Exception:
+                pass
         return True
     except Exception as e:
         print(f"Failed to send alert: {e}")

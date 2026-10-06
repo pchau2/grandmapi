@@ -67,11 +67,26 @@ def is_youtube_foreground(ip):
     return False
 
 
+def _wait_for_youtube(ip, timeout=10, settle=0.5):
+    """Poll until YouTube is the resumed activity, then wait settle seconds."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        ok, out, _ = _adb(ip, "shell",
+                          "dumpsys activity activities | grep mResumedActivity",
+                          timeout=3)
+        if ok and YOUTUBE_PKG in out:
+            time.sleep(settle)
+            return True
+        time.sleep(0.5)
+    return False
+
+
 def restart_youtube(ip):
-    """Force-stop and relaunch YouTube to its home screen."""
+    """Force-stop and relaunch YouTube, waiting until it is foreground."""
     _adb(ip, "shell", "am", "force-stop", YOUTUBE_PKG)
     time.sleep(2)
     _adb(ip, "shell", "am", "start", "-n", YOUTUBE_ACTIVITY)
+    _wait_for_youtube(ip, timeout=8, settle=0.5)
 
 
 def open_youtube_history(ip):
@@ -79,7 +94,7 @@ def open_youtube_history(ip):
     _adb(ip, "shell", "am", "force-stop", YOUTUBE_PKG)
     time.sleep(2)
     _adb(ip, "shell", "am", "start", "-n", YOUTUBE_ACTIVITY)
-    time.sleep(8)  # Cobalt load time varies — 8s is reliable on slow starts
+    _wait_for_youtube(ip, timeout=10, settle=1.0)  # extra settle for UI to render
 
     send_key(ip, KEY_LEFT)   # open sidebar
     time.sleep(1.0)
