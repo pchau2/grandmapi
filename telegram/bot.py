@@ -3,6 +3,8 @@ import os
 import sys
 import json
 import time
+import threading
+import subprocess
 import urllib.request
 import urllib.parse
 
@@ -13,6 +15,11 @@ BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 connected_ip = None
+_wifi_was_connected = True
+
+HEARTBEAT_INTERVAL = 86400   # 24 hours
+WIFI_CHECK_INTERVAL = 60     # 1 minute
+FS_CHECK_INTERVAL = 120      # 2 minutes
 
 
 # ------------------------------------------------------------------ API helpers
@@ -64,8 +71,80 @@ def send_photo(path, caption=""):
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             return json.loads(resp.read())
-    except Exception as e:
+    except Exception:
         return {"ok": False}
+
+
+# ------------------------------------------------------------------ monitoring
+
+def _is_wifi_connected():
+    try:
+        result = subprocess.run(
+            ["iwgetid", "-r"], capture_output=True, text=True, timeout=5
+        )
+        return result.stdout.strip() != ""
+    except Exception:
+        return False
+
+
+def _heartbeat_loop():
+    while True:
+        time.sleep(HEARTBEAT_INTERVAL)
+        wifi = _is_wifi_connected()
+        fs = "Connected" if connected_ip else "Not connected"
+        send(
+            f"grandmapi heartbeat\n"
+            f"WiFi: {'Connected' if wifi else 'Disconnected'}\n"
+            f"Fire Stick: {fs}"
+        )
+
+
+def _wifi_monitor_loop():
+    global _wifi_was_connected
+    while True:
+        time.sleep(WIFI_CHECK_INTERVAL)
+        connected = _is_wifi_connected()
+        if not connected and _wifi_was_connected:
+            _wifi_was_connected = False
+            # Can't send Telegram if WiFi is down — just log it
+            print("[monitor] WiFi connection lost.")
+        elif connected and not _wifi_was_connected:
+            _wifi_was_connected = True
+            send("WiFi reconnected.")
+            print("[monitor] WiFi restored.")
+
+
+def _firestick_monitor_loop():
+    global connected_ip
+    last_state = None
+
+    while True:
+        time.sleep(FS_CHECK_INTERVAL)
+        if connected_ip:
+            ok, _, _ = adb_manager._adb(connected_ip, "shell", "echo", "ok", timeout=5)
+            if not ok:
+                send(f"Fire Stick disconnected ({connected_ip}).")
+                print(f"[monitor] Fire Stick {connected_ip} disconnected.")
+                connected_ip = None
+                last_state = "disconnected"
+        else:
+            if last_state != "scanning":
+                last_state = "scanning"
+            devices = discovery.scan()
+            for ip in devices:
+                if adb_manager.connect(ip):
+                    connected_ip = ip
+                    name = adb_manager.get_device_name(ip)
+                    send(f"Fire Stick reconnected: {name} ({ip})")
+                    print(f"[monitor] Fire Stick {ip} reconnected.")
+                    last_state = "connected"
+                    break
+
+
+def start_monitors():
+    threading.Thread(target=_heartbeat_loop, daemon=True).start()
+    threading.Thread(target=_wifi_monitor_loop, daemon=True).start()
+    threading.Thread(target=_firestick_monitor_loop, daemon=True).start()
 
 
 # ------------------------------------------------------------------ Fire Stick
@@ -104,7 +183,7 @@ HELP_TEXT = (
     "/lock - Lock Fire Stick to YouTube only\n"
     "/unlock - Restore normal Fire Stick access\n"
     "/reboot - Reboot the Fire Stick\n"
-    "/status - Check Fire Stick connection\n"
+    "/status - Check connection status\n"
     "/help - Show this message"
 )
 
@@ -117,16 +196,22 @@ def handle_command(text):
         send(HELP_TEXT)
 
     elif cmd == "/status":
+        wifi = _is_wifi_connected()
         if connected_ip:
             ok, _, _ = adb_manager._adb(connected_ip, "shell", "echo", "ok", timeout=5)
             if ok:
                 name = adb_manager.get_device_name(connected_ip)
-                send(f"Connected to {name} ({connected_ip})")
+                fs_status = f"Connected to {name} ({connected_ip})"
             else:
                 connected_ip = None
-                send("Fire Stick disconnected.")
+                fs_status = "Disconnected"
         else:
-            send("Not connected to any Fire Stick.")
+            fs_status = "Not connected"
+        send(
+            f"*grandmapi status*\n"
+            f"WiFi: {'Connected' if wifi else 'Disconnected'}\n"
+            f"Fire Stick: {fs_status}"
+        )
 
     elif cmd == "/screenshot":
         if not ensure_connected():
@@ -175,7 +260,13 @@ def run():
         sys.exit(1)
 
     print("grandmapi bot started.")
-    send("grandmapi is online. Type /help for available commands.")
+    send(
+        "grandmapi is online.\n"
+        f"WiFi: {'Connected' if _is_wifi_connected() else 'Disconnected'}\n"
+        "Type /help for available commands."
+    )
+
+    start_monitors()
 
     offset = 0
     while True:
