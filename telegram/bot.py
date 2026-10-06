@@ -182,8 +182,8 @@ HELP_TEXT = (
     "*grandmapi commands*\n\n"
     "/screenshot - Take a screenshot of the Fire Stick\n"
     "/youtube - Open YouTube\n"
-    "/lock - Lock Fire Stick to YouTube only\n"
-    "/unlock - Restore normal Fire Stick access\n"
+    "/ytlock - Lock Fire Stick to YouTube only\n"
+    "/ytunlock - Restore normal Fire Stick access\n"
     "/disablemic - Disable voice search (mic button = help alert only)\n"
     "/enablemic - Re-enable voice search\n"
     "/reboot - Reboot the Fire Stick\n"
@@ -233,13 +233,13 @@ def handle_command(text):
         adb_manager.open_youtube(connected_ip)
         send("YouTube opened.")
 
-    elif cmd == "/lock":
+    elif cmd == "/ytlock":
         if not ensure_connected():
             return
         adb_manager.lock_to_youtube(connected_ip)
         send("Fire Stick locked to YouTube only.")
 
-    elif cmd == "/unlock":
+    elif cmd == "/ytunlock":
         if not ensure_connected():
             return
         adb_manager.unlock(connected_ip)

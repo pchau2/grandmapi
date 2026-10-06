@@ -63,7 +63,7 @@ class App:
         self.fs_status_color = COLORS["status_info"]
         self.fs_screenshot_path = None
         self.fs_screenshot_surface = None
-        self.control_items = ["Take Screenshot", "Open YouTube", "Lock to YouTube", "Unlock", "Back"]
+        self.control_items = ["Take Screenshot", "Open YouTube", "YT Lock", "YT Unlock", "Back"]
         self.control_selected = 0
 
         # Top-level scene
@@ -194,12 +194,12 @@ class App:
                 adb_manager.open_youtube(ip)
                 self.fs_status = "YouTube opened."
                 self.fs_status_color = COLORS["status_ok"]
-            elif action == "Lock to YouTube":
+            elif action == "YT Lock":
                 self.fs_status = "Locking to YouTube..."
                 adb_manager.lock_to_youtube(ip)
                 self.fs_status = "Locked to YouTube."
                 self.fs_status_color = COLORS["status_ok"]
-            elif action == "Unlock":
+            elif action == "YT Unlock":
                 self.fs_status = "Unlocking..."
                 adb_manager.unlock(ip)
                 self.fs_status = "Unlocked."
@@ -409,6 +409,7 @@ class App:
                         self.fs_scene = "list"
                     else:
                         self._run_control_action(action)
+
                 elif esc:
                     self.fs_scene = "list"
 
